@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Looked up by name from the camera process (GR snap focus menu) and by LSPosed. -->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@drawable/snap_switch_*,@array/xposed_scope" />

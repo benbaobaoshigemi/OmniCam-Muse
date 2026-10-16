@@ -1,0 +1,158 @@
+{
+  "films": [
+    {
+      "id": "kodak_portra_400",
+      "label": "Kodak Portra 400",
+      "positive": false,
+      "defaultPrint": "kodak_portra_endura"
+    },
+    {
+      "id": "kodak_gold_200",
+      "label": "Kodak Gold 200",
+      "positive": false,
+      "defaultPrint": "kodak_portra_endura"
+    },
+    {
+      "id": "kodak_ektar_100",
+      "label": "Kodak Ektar 100",
+      "positive": false,
+      "defaultPrint": "kodak_portra_endura"
+    },
+    {
+      "id": "fujifilm_pro_400h",
+      "label": "Fujifilm Pro 400H",
+      "positive": false,
+      "defaultPrint": "kodak_portra_endura"
+    },
+    {
+      "id": "fujifilm_velvia_100",
+      "label": "Fujifilm Velvia 100",
+      "positive": true,
+      "defaultPrint": null
+    },
+    {
+      "id": "kodak_kodachrome_64",
+      "label": "Kodak Kodachrome 64",
+      "positive": true,
+      "defaultPrint": null
+    },
+    {
+      "id": "kodak_vision3_500t",
+      "label": "Kodak Vision3 500T",
+      "positive": false,
+      "defaultPrint": "kodak_2383"
+    },
+    {
+      "id": "fujifilm_c200",
+      "label": "Fujifilm C200",
+      "positive": false,
+      "defaultPrint": "kodak_portra_endura"
+    },
+    {
+      "id": "fujifilm_provia_100f",
+      "label": "Fujifilm Provia 100F",
+      "positive": true,
+      "defaultPrint": null
+    },
+    {
+      "id": "fujifilm_xtra_400",
+      "label": "Fujifilm Superia X-TRA 400",
+      "positive": false,
+      "defaultPrint": "kodak_portra_endura"
+    },
+    {
+      "id": "kodak_ektachrome_100",
+      "label": "Kodak Ektachrome 100",
+      "positive": true,
+      "defaultPrint": null
+    },
+    {
+      "id": "kodak_portra_160",
+      "label": "Kodak Portra 160",
+      "positive": false,
+      "defaultPrint": "kodak_portra_endura"
+    },
+    {
+      "id": "kodak_portra_800",
+      "label": "Kodak Portra 800",
+      "positive": false,
+      "defaultPrint": "kodak_portra_endura"
+    },
+    {
+      "id": "kodak_portra_800_push1",
+      "label": "Kodak Portra 800 Push 1",
+      "positive": false,
+      "defaultPrint": "kodak_portra_endura"
+    },
+    {
+      "id": "kodak_portra_800_push2",
+      "label": "Kodak Portra 800 Push 2",
+      "positive": false,
+      "defaultPrint": "kodak_portra_endura"
+    },
+    {
+      "id": "kodak_ultramax_400",
+      "label": "Kodak UltraMax 400",
+      "positive": false,
+      "defaultPrint": "kodak_portra_endura"
+    },
+    {
+      "id": "kodak_verita_200d",
+      "label": "Kodak Vericolor II 200D",
+      "positive": false,
+      "defaultPrint": "kodak_portra_endura"
+    },
+    {
+      "id": "kodak_vision3_200t",
+      "label": "Kodak Vision3 200T",
+      "positive": false,
+      "defaultPrint": "kodak_2383"
+    },
+    {
+      "id": "kodak_vision3_250d",
+      "label": "Kodak Vision3 250D",
+      "positive": false,
+      "defaultPrint": "kodak_2383"
+    },
+    {
+      "id": "kodak_vision3_50d",
+      "label": "Kodak Vision3 50D",
+      "positive": false,
+      "defaultPrint": "kodak_2383"
+    }
+  ],
+  "prints": [
+    {
+      "id": "fujifilm_crystal_archive_typeii",
+      "label": "Fujifilm Crystal Archive Type II"
+    },
+    {
+      "id": "kodak_2383",
+      "label": "Kodak 2383 Color Print"
+    },
+    {
+      "id": "kodak_2393",
+      "label": "Kodak 2393 Color Print"
+    },
+    {
+      "id": "kodak_ektacolor_edge",
+      "label": "Kodak Ektacolor Edge"
+    },
+    {
+      "id": "kodak_endura_premier",
+      "label": "Kodak Endura Premier"
+    },
+    {
+      "id": "kodak_portra_endura",
+      "label": "Kodak Portra Endura"
+    },
+    {
+      "id": "kodak_supra_endura",
+      "label": "Kodak Supra Endura"
+    },
+    {
+      "id": "kodak_ultra_endura",
+      "label": "Kodak Ultra Endura"
+    }
+  ]
+}

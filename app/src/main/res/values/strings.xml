@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">OmniCam Muse</string>
+    <string name="xposed_description">理光 GR、POP、X10 移植与大师滤镜补全</string>
+</resources>

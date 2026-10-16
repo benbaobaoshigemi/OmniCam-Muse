@@ -1,0 +1,76 @@
+{
+  "background": {
+    "backgroundType": 1,
+    "backgroundPath": "out.jpg",
+    "backgroundResName": "backgroundWithGrid"
+  },
+  "baseImageSize": 360,
+  "bitmaps": [
+    {
+      "colors": [],
+      "colorsNormal": [],
+      "colorsP3": [],
+      "direction": 3,
+      "gradientOrientation": 1,
+      "height": -1,
+      "heightIncludeMargin": false,
+      "layout": 1,
+      "needDrawFirst": false,
+      "orientation": 0,
+      "position": {
+        "borderX": 19.7,
+        "borderY": 123.2
+      },
+      "width": -1,
+      "widthIncludeMargin": false,
+      "elements": [
+        {
+          "content": {
+            "aiContent": "",
+            "aiContentIndex": 0,
+            "bitmap": "board_inner.png",
+            "bitmapResName": "board_inner",
+            "bitmapSourceType": 3,
+            "content": "",
+            "height": -1,
+            "scaleType": 6,
+            "textSource": 0,
+            "type": "image",
+            "width": -1
+          },
+          "editable": false,
+          "groupId": 0,
+          "id": 2,
+          "isHighPixel4kLiveImage": false,
+          "isXpanImage": false,
+          "position": {
+            "layoutGravityEnable": true,
+            "leftMargin": 0,
+            "topMargin": 0,
+            "rightMargin": 0,
+            "bottomMargin": 0
+          },
+          "spaceUse": "occupy",
+          "visible": true
+        }
+      ]
+    }
+  ],
+  "imageOffset": {
+    "startX": 19.7,
+    "startY": 38.4
+  },
+  "isNeedShootingInfo": false,
+  "size": {
+    "bottomMargin": 123.2,
+    "leftMargin": 19.7,
+    "rightMargin": 19.7,
+    "topMargin": 39.8
+  },
+  "styleId": "pld",
+  "supportBg": [],
+  "supportLogos": [],
+  "titles": [],
+  "titlesMap": {},
+  "version": 0
+}

@@ -1,0 +1,15 @@
+# build outputs and local state
+/.gradle/
+/.kotlin/
+/app/build/
+/app/.cxx/
+/build/
+/local.properties
+*.apk
+*.zip
+*.idsig
+*.keystore
+
+# python caches
+__pycache__/
+*.pyc

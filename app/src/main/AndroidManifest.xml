@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <queries>
+        <package android:name="com.oplus.camera" />
+        <package android:name="com.coloros.gallery3d" />
+    </queries>
+    <application android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round"
+        android:allowBackup="false"
+        android:label="@string/app_name"
+        android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+        <meta-data android:name="xposedmodule" android:value="true" />
+        <meta-data android:name="xposeddescription" android:value="@string/xposed_description" />
+        <!-- 93: LSPosed serves this module's shared preferences to hooked apps (xposedsharedprefs). -->
+        <meta-data android:name="xposedminversion" android:value="93" />
+        <meta-data android:name="xposedscope" android:resource="@array/xposed_scope" />
+        <meta-data android:name="xposedsharedprefs" android:value="true" />
+
+        <activity
+            android:name="local.jiege.ui.SettingsActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="de.robv.android.xposed.category.MODULE_SETTINGS" />
+            </intent-filter>
+        </activity>
+        <!-- Master filter configuration and imported LUTs for the camera (MasterFilterContract). -->
+        <provider
+            android:name="local.jiege.ui.MasterFilterProvider"
+            android:authorities="local.jiege.camera.masterfilters"
+            android:exported="true" />
+    </application>
+</manifest>
