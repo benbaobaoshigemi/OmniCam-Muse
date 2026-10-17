@@ -166,7 +166,6 @@ public final class ModuleSettings {
             case HIGH_PIXEL_200M_NO_FACE:
                 return false;
             case POP_HIGH_PIXEL:
-            case UNLOCK_25MP:
             case HIGH_PIXEL_EFFECTS:
             case SHUTTER_IN_SILENT:
             case SHUTTER_IN_VIBRATE:
@@ -177,8 +176,24 @@ public final class ModuleSettings {
             case NATURAL_NO_AI_DETAIL:
             case NATURAL_NO_LCE:
                 return true;
+            case UNLOCK_25MP:
+                // The unlock serves config copies generated from the X9 Ultra stock /odm. On PKJ110 those
+                // describe 25M QBC / DCG / 2DOL nodes this sensor does not have, and the capture gate
+                // (ProfessionalMode.isAllowedToTakePicture -> BaseMode.getSensorModeFromRequest) then
+                // throws on a null sensor-mode array: every mode's shutter silently does nothing.
+                // PMA110 (X9 Ultra) keeps it on.
+                return isPma110();
             default:
                 throw new IllegalArgumentException("Unknown setting " + key);
         }
+    }
+
+    /** True on the Find X9 Ultra (PMA110), the only device the 25MP unlock's config copies fit. */
+    private static boolean isPma110() {
+        return contains("PMA110", android.os.Build.MODEL) || contains("PMA110", android.os.Build.DEVICE);
+    }
+
+    private static boolean contains(String needle, String value) {
+        return value != null && value.toUpperCase().contains(needle);
     }
 }

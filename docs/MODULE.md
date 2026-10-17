@@ -118,3 +118,54 @@ GR 模式向相机的播放器请求自己的音效（14 快门，15/16 长曝�
 - native：`app/src/main/cpp/master_lut_slots.cpp`。成片挂 `libBasicTonePhotoX9.so` 的 `BasicTone::MergeLutTet_resize` 与 `BasicTone_OGL::load3DLut<half>`，按源表是否为 LMT（`this+0xd48`）、查找表是 SC∘CWCM（`+0xd58`）还是 ODT（`+0xd50`）分情况套 Pre／Post；只作用于大师帧（`basicToneMasterFrame()`，由 `gr_basictone.cpp` 的 processCore 钩子按帧标记）。预览挂 `libCombineLut.so` 的 `MergeLutTet_resize2rgb`（四线程分段）；原厂四项调节全为 0 时不调用合成，由 Java 侧对返回表套 `Post(Pre())`。
 - Java：`hook/masterlut/MasterLutSlots.java` 传参数、按 `Lut3d.load` 的模式名标记大师预览、参数变化时同步调用 `Lut3d.update` 重算预览表（与原厂调节一致，拖动实时生效）。
 - 对比度：`hook/masterlut/MasterContrast.java`。条目插在影调之后，用原厂影调图标；影调改用理光影调图标 `gr_mode_effect_tone_icon`。量程 −100..100（`EffectMenu.bipolar`），全局持久化、不进预设，重置归 0。效果为理光对比度：理光 SC 表 Sat=0 一列 Lut3／Lut4／Lut5，按 `fuseUtilLut` 的方式在节点间线性插值。
+
+## 哈苏超清（高像素模式）的滤镜
+
+哈苏超清与普通高像素是同一个模式（`high_pixel_mode`，应用侧键 `highPixel`），只差 `hasselblad.super.definition.support`；X8U 本来就能出 50 MP，缺的是这个模式的滤镜、调色盘与柔光入口。
+
+### 为什么这个模式原本没有滤镜
+
+相机按“模式特性清单”逐个建组件：`FeatureConfigureAdapter.getFeatureInfoList(int)` 给出模式名列表，`FeatureFactory.c(cameraId, activity, ui, 特性名, 模式名)` 建每个 presenter，是否入 map 由 `gb.d0.d(cameraId, 模式名, 特性名)` 决定。照片模式的清单是 33 项（含 `com.oplus.camera.feature.filter`），哈苏超清只有 15 项、不含它，所以这个模式从来没有 `FilterPresenter`——没有滤镜条、没有滤镜 UI，拍摄请求里也不会出现滤镜参数。绕 UI 绕不过去的原因在这里。
+
+`hook/highpixel/HighPixelFilters.java` 两处一起改才通：给那份 15 项清单补上 filter 特性（识别方式用 8 个标记特性加 4 个“该模式没有”的特性，不依赖模式名，避免和照片模式混淆），并让 `gb.d0.d` 对 (`highPixel`, filter) 回答真。之后相机自己建出 21 个滤镜与 `FilterPresenter`（钩子抓实例）。`hook/highpixel/HighPixelSupport.java` 另外补答 X9U 有、X8U 缺的四个特性键（`com.oplus.feature.color.palette.support`、`com.oplus.ipu.color.palette.texture.support`、`com.oplus.feature.high.pixel.preevlist.support`、`com.oplus.high_pixel.global.ev.support`），EV 条因此出现。
+
+### 界面
+
+滤镜行由 `HighPixelFilters.bar()` 画：每个滤镜一个 chip，名字取资源串（`FilterGroup.sFilterGroup.getNameIdList`，跟随系统语言）。`MasterPalette.open()` 在 `highPixel` 下把“滤镜行 + 圆盘”包进一个纵向容器（`shelf`），停在 min(`frame_layout` 底边, 变焦行顶边) − 盘高 − 16dp。入口仍是右侧那个 `camera_menu_right_enter_button`，`HighPixelEffects` 负责让它显示（`persist.omnicam.aura.hpentry=1`）并接管点击 → `MasterPalette.toggleFromEntry()`。
+
+三个坑：入口按钮一次点击会上报两次，`toggleFromEntry()` 需要 600ms 去抖；`MenuRightButton` 跨模式复用同一个实例，替换它的监听会把照片模式的效果栏一起弄坏，只在没有监听时补装、且不要在 `onTouchEvent` 里手动 `performClick()`；相机空闲几秒后会合成一次点击去隐藏控件，会落到 `onForeignClick` 上把面板关掉，那里要先判 `view.isShown()`。
+
+还有一处：`MasterPalette.open()` 的页面类型由 `stacked = retro || presenter == null` 决定，而调色盘的 pro presenter 是相机第一次打开调色盘时才建的——同一个按钮“第一次是好页、之后都变成没有滤镜行的 master 页”。所以 `highPixel` 必须先把这个 presenter 置空（`if (!retro && isHighPixelMode(currentMode())) presenter = null;`），恒定走 shelf 页、经 LUT 管理器写影调与饱和度，页面才稳定。
+
+滤镜序号有两套：相机 bean 的下标与 `FilterPresenter.types()` 不是同一套（差一位）。`read()` 只在用户还没点选过（`current < 0`）时才用相机的当前索引，否则界面高亮与实际生效的滤镜会错开。
+
+### 预览
+
+点 chip 时不能只调 `FilterPresenter.select(i)`：这个模式没有原厂滤镜条，`select()` 只记录序号、不会走到 `apply()`，所以预览不变。正解是 `select(i)` 之后再补 `apply(i, softLightIndex, styleIndex, groupIndex)` 与 `FeaturePresenter.resetState()`。
+
+### 成片
+
+滤镜要真正进 50 MP 成片，关键在时机：算法的清单在 `createMetaItemInfo` 之前就已经定好，之后改无效。`ApsProcessor` 所有第一个参数是 `CameraRequestTag` 的方法都挂 before 钩子（`stampTag`），在请求还在拼的时候就把 `mbFilterOpen=true`、`mFilterType=<滤镜类型>` 写到 tag 上；`createMetaItemInfo` 自己还有一个钩子再补一次。`MetaItemInfo` 本身不可变（没有 set 方法），所以“事后往算法数组里加节点”这条路不通。
+
+`FilterHelper.sFilterPathConvertMap` 里没有 ID 的滤镜，拍摄侧无法应用，必须在两处钩子里都过一遍 `hasCaptureId()`，否则成片是 92 MB 的满屏噪点。保险开关 `persist.omnicam.aura.hpfiltercapture=0`（重启相机生效）。
+
+### 50 MP 下只有两个滤镜会坏：颗粒系
+
+21 个滤镜里有 19 个在 50 MP 下直接可用，唯一出问题的是**带胶片颗粒模拟的两个**：和光（`portra400_normal.bin`）与反差黑白（`blackandwhite_HC_normal.bin`）。症状是成片 92 MB、满屏颗粒、饱和度掉到 20 出头，而快门按下后先显示的缩略图（预览链出的 quick JPEG）是好的，一两秒后被 APS 合成的结果替换时才变坏。
+
+原因不是链、不是引擎、也不是 LUT 变体，而是**颗粒参数块没填**。大师模式给这两个滤镜在请求上写了一整套 17 项：LUT（`*_hdr_normal*.bin`）、`mFilterEnumType`（和光 111、反差黑白 115）、`mFilterIntensity`（0、50）、`mFilterColorGrain`、`mnFilterGrainType`，以及 `mbFilterGain*` 七项与 `mfFilter*` 五项（颗粒增益曲线、模糊与高光/阴影阈值）。注入的滤镜特性不会填这些，颗粒引擎拿全 0 参数跑，输出的就是那片噪点。
+
+`HighPixelFilters.GRAIN_FILTERS` 按滤镜类型列出这些值（照抄大师模式同一滤镜的快照），`masterizeForCapture()` 在写请求时连同 LUT 一起改写这 17 个字段，只在 LUT 文件存在于 `/odm/etc/camera/meishe_lut/` 时才改。其余 19 个滤镜原样放行。以后再加同类滤镜，加一行即可。
+
+排查时走过的弯路（别再重走）：把 `aps_algo_filter` 挪到链尾、补 `aps_algo_basic_tone`（`MetaItemInfo` 不能加长，换掉 watermark 槽位也没用）、把 `highPictureSize`/`aiHighPixel` 置假强制降成 12 MP（不生效，成片仍是 50 MP）、把 `_normal` 换成 `_master` 变体、改 `mFilterEnumType`、写 `mFilterId`（该字段不存在）。真正有效的方法是：让所有滤镜各拍一张做 A/B，再对比大师模式同一滤镜的请求字段快照——`HighPixelRequest` 诊断会按“模式 × 滤镜”各打一行全部滤镜字段的值。
+
+### 属性开关
+
+- `persist.omnicam.aura.hires` — 哈苏超清模式入口（`setprop … 0` 后重启相机即隐藏）。
+- `persist.omnicam.aura.hpentry` — 右侧滤镜/调色盘入口按钮。
+- `persist.omnicam.aura.hpfiltercapture` — 成片侧滤镜（`0` 关闭）。
+- `persist.omnicam.aura.masterpalette` — 调色盘本体。
+
+### 未做
+
+调色盘（影调、饱和度）在这个模式的预览已通，成片仍是 `palette=false`：请求上的 `mbPaletteEnable` 没有被置真。走的是与滤镜同一条打标路，跟上文 `stampTag` 一样处理即可。
