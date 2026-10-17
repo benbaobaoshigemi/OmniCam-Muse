@@ -13,3 +13,11 @@
 # python caches
 __pycache__/
 *.pyc
+
+# local working state (kept on disk, never committed)
+/.workbuddy/
+/.muse_tmp/
+/build_*.txt
+/gradle_*.txt
+/javac_*.txt
+/pkg_err.txt
