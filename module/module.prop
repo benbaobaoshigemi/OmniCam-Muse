@@ -1,6 +1,6 @@
 id=ricoh_pop_x9u
 name=OmniCam Muse
-version=Muse 4.0
-versionCode=300
+version=Muse 4.1-x8u
+versionCode=301
 author=local-port
-description=RICOH GR, POP, X10 and master filter features for PMA110, with a settings app.
+description=RICOH GR, POP, X10, master colour and master filter features for PMA110 (Find X9 Ultra) and PKJ110 (Find X8 Ultra), with a settings app. Both device profiles verified: PMA110 by upstream Muse, PKJ110 by the X8U port. Device profile is detected at boot; see mount.log and bind.log. Requires a KernelSU metamodule (mountify tested) and mounts /odm files.

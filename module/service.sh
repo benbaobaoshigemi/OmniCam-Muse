@@ -129,6 +129,22 @@ restorecon -R "$ASSET_DIR" "$APP/files/odm" 2>/dev/null || true
 
 # Normal-mode 25MP unlock (tools/patch_25mp.py): the relaxed config copies; the settings hook adds the
 # "enabled" marker while the switch is on and unlock25mp.cpp redirects reads to these copies.
+#
+# The copies are generated from the X9 Ultra stock /odm, so they only describe sensor modes PMA110 has.
+# On PKJ110 the redirected decision tree hands the capture gate a null sensor-mode array and every
+# mode's shutter silently does nothing - unlock25mp.cpp therefore also requires the profile file below
+# to say PMA110. Written here because this is the only place that runs with the app's uid available.
+PROFILE_FILE="$APP/files/jiege/profile"
+mkdir -p "$APP/files/jiege"
+if [ "$(getprop ro.product.model 2>/dev/null)" = PMA110 ]; then
+    echo PMA110 > "$PROFILE_FILE"
+else
+    echo PKJ110 > "$PROFILE_FILE"
+fi
+chown "$APP_UID:$APP_UID" "$PROFILE_FILE"
+chmod 0644 "$PROFILE_FILE"
+restorecon "$PROFILE_FILE" 2>/dev/null || true
+
 UNLOCK_DIR="$APP/files/jiege/unlock25mp"
 mkdir -p "$UNLOCK_DIR"
 rm -f "$UNLOCK_DIR"/live50*  # staged by 1.3.0-1.3.5 (live 50MP, removed)
