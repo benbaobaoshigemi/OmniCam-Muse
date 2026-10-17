@@ -109,8 +109,21 @@ final class GrFocalLength {
             @Override protected void beforeHookedMethod(MethodHookParam param) {
                 if (!isMillimetreBar(symbols, param.thisObject)) return;
                 try {
-                    symbols.set("Zoom.iconBitmap", param.thisObject, null);
-                    symbols.set("Zoom.labelBitmap", param.thisObject, null);
+                    // X8U port note: dropping the label cache used to be pinned to the obfuscated
+                    // field name "I6" (Zoom.labelBitmap), which does not exist on Find X8 Ultra any
+                    // more - the Bitmap caches there are H6/J6 - and Symbols.set() only accepts a
+                    // single-hit field, so the name cannot simply be relaxed. Zoom.labelBitmaps is a
+                    // multi symbol matching every Bitmap field of ZoomSeekBar; nulling all of them
+                    // is exactly "drop the label cache" and it holds on both devices, so the stale
+                    // single-name fingerprint was removed from symbols.json instead of being kept
+                    // around as a failure the camera would report on every start.
+                    if (symbols.has("Zoom.labelBitmaps")) {
+                        for (java.lang.reflect.Field cache : symbols.<java.lang.reflect.Field>all("Zoom.labelBitmaps")) {
+                            cache.set(param.thisObject, null);
+                        }
+                    } else {
+                        symbols.set("Zoom.iconBitmap", param.thisObject, null);
+                    }
                 } catch (Throwable ignored) {
                 }
             }
