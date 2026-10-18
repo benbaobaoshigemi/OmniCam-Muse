@@ -165,7 +165,6 @@ public final class ModuleSettings {
             case XPAN_CLEAN_ANIMATION:
             case HIGH_PIXEL_200M_NO_FACE:
                 return false;
-            case POP_HIGH_PIXEL:
             case HIGH_PIXEL_EFFECTS:
             case SHUTTER_IN_SILENT:
             case SHUTTER_IN_VIBRATE:
@@ -176,6 +175,14 @@ public final class ModuleSettings {
             case NATURAL_NO_AI_DETAIL:
             case NATURAL_NO_LCE:
                 return true;
+            case POP_HIGH_PIXEL:
+                // POP's 25M upscale rides ApsProcessor.updateUpscaleSize by rewriting the capture mode to
+                // "photo_mode" for the duration of the call. On PKJ110 (X8U) that rewrite makes the engine
+                // write the full-sensor RAW (4096x3072 / 5888x4416, 47-123MB, leading bytes are raw pixels
+                // not a JPEG SOI) instead of an encoded JPEG, so the shot opens as a thumbnail then blanks
+                // out in the gallery. The 25M output never actually materialised on X8U anyway (every
+                // healthy POP shot is 12.5M), so gate it to PMA110 (X9 Ultra) like UNLOCK_25MP.
+                return isPma110();
             case UNLOCK_25MP:
                 // The unlock serves config copies generated from the X9 Ultra stock /odm. On PKJ110 those
                 // describe 25M QBC / DCG / 2DOL nodes this sensor does not have, and the capture gate
