@@ -484,9 +484,19 @@ public final class X10FilterPort {
         } catch (Throwable t) { XposedBridge.log(TAG + ": palette stamp hook failed " + t); }
     }
 
-    /** Modes whose capture request never sets {@code mbPaletteEnable} itself, so this hook stamps it. */
+    /**
+     * Modes whose capture request never sets {@code mbPaletteEnable} itself, so this hook stamps it.
+     *
+     * professional/master mode is deliberately NOT stamped: on the X8U engine any
+     * aps_algo_color_palette node in the master pipeline (which already carries
+     * aps_algo_basic_tone) makes palette_basic_tone_init re-initialise the basic-tone node and the
+     * shot comes out wrong -- washed out when the palette node sits next to basic_tone, darkened
+     * when it sits at the end of the list (measured 2026-10-18 22:15 / 22:33, against the clean
+     * 21:34 no-stamp capture). High-pixel keeps the stamp: its pipeline gets basic_tone through the
+     * engine NOP patch and the same combination was verified good there.
+     */
     private static boolean stampsPalette(String mode) {
-        return "high_pixel_mode".equals(mode) || "professional_mode".equals(mode);
+        return "high_pixel_mode".equals(mode);
     }
 
     private static void stampPalette(Object tag) {
