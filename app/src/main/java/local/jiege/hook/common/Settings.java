@@ -25,6 +25,10 @@ public final class Settings {
     private static XSharedPreferences preferences() {
         if (preferences == null) {
             preferences = new XSharedPreferences(MODULE_PACKAGE, ModuleSettings.FILE);
+            // XSharedPreferences loads its file asynchronously on construction; a read right after
+            // construction sees an empty map and falls back to defaults. reload() blocks until the
+            // backing map is loaded, so force it once here.
+            preferences.reload();
         } else if (preferences.hasFileChanged()) {
             preferences.reload();
         }

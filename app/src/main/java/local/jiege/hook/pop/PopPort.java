@@ -43,5 +43,10 @@ public final class PopPort {
         } catch (Throwable error) {
             Log.e(TAG, "POP SDR style hook unavailable", error);
         }
+        try {
+            PopCaptureDiagnostics.install(classLoader);
+        } catch (Throwable error) {
+            Log.e(TAG, "POP capture probe unavailable", error);
+        }
     }
 }
