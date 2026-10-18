@@ -392,6 +392,8 @@
                 {
                     "id" : 0,
                     "enable" : 1,
+
+                    "aps_algo_color_palette" : 1,
                     "aps_algo_blurless" : 0,
                     "aps_algo_bokeh" : 0,
                     "aps_algo_hdr" : 0,
@@ -424,6 +426,8 @@
                 {
                     "id" : 1,
                     "enable" : 1,
+
+                    "aps_algo_color_palette" : 1,
                     "aps_algo_none" : 1
                 }
             ]

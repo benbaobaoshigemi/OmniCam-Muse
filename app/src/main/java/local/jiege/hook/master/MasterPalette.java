@@ -489,6 +489,8 @@ public final class MasterPalette {
     }
 
     private static volatile long lastEntryToggleAt;
+    private static final java.util.Set<String> dumpedModeClasses =
+        java.util.Collections.synchronizedSet(new java.util.HashSet<>());
 
     private static String prop(String name) {
         try {
@@ -1137,14 +1139,58 @@ public final class MasterPalette {
         return target == null ? "none" : target.getClass().getName();
     }
 
+    /** Dumps methods on the mode object whose name starts with H or x, once per class, for diagnosis. */
+    private static void dumpModeMethods(Object target) {
+        if (target == null) return;
+        String key = target.getClass().getName();
+        if (!dumpedModeClasses.add(key)) return;
+        StringBuilder text = new StringBuilder("mode methods ").append(key).append(':');
+        for (java.lang.reflect.Method m : target.getClass().getMethods()) {
+            String n = m.getName();
+            if (n.startsWith("H") || n.startsWith("x")) {
+                text.append(' ').append(n).append('(');
+                Class<?>[] ps = m.getParameterTypes();
+                for (int i = 0; i < ps.length; i++) {
+                    if (i > 0) text.append(',');
+                    text.append(ps[i].getSimpleName());
+                }
+                text.append(')');
+            }
+        }
+        Log.i(TAG, text.toString());
+    }
+
+    /** Reports whether the exact {@code H4(int)} / {@code x6(int)} overloads exist on the target. */
+    private static void dumpExactMethods(Object target, String... names) {
+        if (target == null) return;
+        for (String n : names) {
+            try {
+                java.lang.reflect.Method m = target.getClass().getMethod(n, int.class);
+                Log.i(TAG, "exact " + n + "(int) -> " + m.getDeclaringClass().getName());
+            } catch (Throwable error) {
+                Log.i(TAG, "exact " + n + "(int) missing " + error.getClass().getSimpleName());
+            }
+        }
+    }
+
     /** Notifies the mode object of a palette change; the value itself is already in the manager. */
     private static void notifyMode(String name, int value) {
         Object target = modeObject();
-        if (target == null) return;
+        if (target == null) {
+            Log.i(TAG, "notifyMode " + name + "=" + value + " -> modeObject null (mode="
+                + currentMode() + ")");
+            return;
+        }
         try {
             XposedHelpers.callMethod(target, "P0".equals(name) ? "H4" : "x6", value);
-        } catch (Throwable ignored) {
+            Log.i(TAG, "notifyMode " + name + "=" + value + " -> " + describeClass(target)
+                + " ok (mode=" + currentMode() + ")");
+        } catch (Throwable error) {
+            Log.i(TAG, "notifyMode " + name + "=" + value + " -> " + describeClass(target)
+                + " failed " + error);
         }
+        dumpModeMethods(target);
+        dumpExactMethods(target, "H4", "x6");
     }
 
     // --- the floating session ----------------------------------------------------------------

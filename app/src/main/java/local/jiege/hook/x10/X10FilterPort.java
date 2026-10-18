@@ -43,7 +43,13 @@ public final class X10FilterPort {
     private static final String[] TYPES = {X10Filters.QING_TOU, X10Filters.HU_PO};
     private static final Map<String, int[]> PALETTE = buildPalette();
 
+    /** The camera app's class loader, captured at install. {@code CameraRequestTag} lives in the OCS
+     *  library, so {@code tag.getClass().getClassLoader()} resolves the wrong loader for the
+     *  camera-app-owned {@code Lut3dDataManager}. */
+    private static volatile ClassLoader cameraLoader;
+
     public static void installCamera(ClassLoader classLoader) {
+        cameraLoader = classLoader;
         ModeName.install(classLoader);
         hookFilterMap(classLoader);
         hookDrawing(classLoader);
@@ -51,6 +57,7 @@ public final class X10FilterPort {
         hookPalette(classLoader);
         hookPaletteColors(classLoader);
         hookPaletteCapture(classLoader);
+        hookHighPixelPaletteStamp(classLoader);
         hookStyleSwitchCount(classLoader);
         XposedBridge.log(TAG + ": loaded");
     }
@@ -401,7 +408,26 @@ public final class X10FilterPort {
                     if (x.hasThrowable()) return;
                     try {
                         Object tag = x.args[0];
-                        if (!XposedHelpers.getBooleanField(tag, "mbPaletteEnable")) return;
+                        boolean paletteEnable = XposedHelpers.getBooleanField(tag, "mbPaletteEnable");
+                        if (!paletteEnable) {
+                            // Diagnostic: high-pixel / professional are the modes where the palette
+                            // preview works but the capture flag is never set, so log the two gates
+                            // the stamp would hit.
+                            Object modeRaw = XposedHelpers.getObjectField(tag, "mCaptureMode");
+                            if (modeRaw instanceof String && stampsPalette((String) modeRaw)) {
+                                try {
+                                    Object apsTag = XposedHelpers.getObjectField(tag, "mApsRequestTag");
+                                    int cameraId = XposedHelpers.getIntField(tag, "mRearFrontCameraId");
+                                    String mode = (String) XposedHelpers.callStaticMethod(converter, "getApsModeName",
+                                        XposedHelpers.getObjectField(apsTag, "mModeName"), cameraId);
+                                    boolean support = ((Boolean) XposedHelpers.callStaticMethod(switches,
+                                        "getSupportCaptureAlgo", mode, cameraId, PaletteCaptureAlgorithms.PALETTE)).booleanValue();
+                                    XposedBridge.log(TAG + ": palette gates mode=" + mode
+                                        + " camera=" + cameraId + " mbPaletteEnable=false supportCaptureAlgo=" + support);
+                                } catch (Throwable t) { XposedBridge.log(TAG + ": palette gate probe " + t); }
+                            }
+                            return;
+                        }
                         Object apsTag = XposedHelpers.getObjectField(tag, "mApsRequestTag");
                         int cameraId = XposedHelpers.getIntField(tag, "mRearFrontCameraId");
                         String mode = (String) XposedHelpers.callStaticMethod(converter, "getApsModeName",
@@ -420,5 +446,86 @@ public final class X10FilterPort {
             });
             XposedBridge.log(TAG + ": palette capture hook installed");
         } catch (Throwable t) { XposedBridge.log(TAG + ": palette capture hook install failed " + t); }
+    }
+
+    /**
+     * The 哈苏超清 capture request is built with {@code mbPaletteEnable} unset, so
+     * {@link #hookPaletteCapture} bails at its first gate and the palette never reaches the shot
+     * even though the preview shows it and {@code getSupportCaptureAlgo(aiHighPixel, ...)} already
+     * returns true. Photo mode sets the flag itself; this stamps it on for high-pixel, the same way
+     * {@code HighPixelFilters.stampTag} stamps {@code mbFilterOpen}. Rides every ApsProcessor method
+     * whose first parameter is a {@code CameraRequestTag}, so the flag is present from the moment
+     * the SDK reads it (the algorithm list is chosen before {@code createMetaItemInfo} runs).
+     *
+     * The same stamp now also covers professional/master mode: its own "palette" is basic_tone (the
+     * tone/saturation dial, MasterPalette), which bakes the look into the shot but never sets
+     * mbPaletteEnable, so the shot leaves with no src.image and no palette stamp and the gallery's
+     * 色彩风格 entry disappears. Stamping the flag here lets {@link #hookPaletteCapture} add
+     * aps_algo_color_palette (now declared for "master" in the algo-switch table) so the native
+     * backend writes src.image before basic_tone bakes the look - which is what the gallery's
+     * color_palette re-render needs.
+     */
+    private static void hookHighPixelPaletteStamp(ClassLoader classLoader) {
+        try {
+            Class<?> processor = XposedHelpers.findClass("com.oplus.ocs.camera.consumer.ApsProcessor", classLoader);
+            Class<?> tagClass = XposedHelpers.findClass("com.oplus.ocs.camera.common.util.CameraRequestTag", classLoader);
+            int stamped = 0;
+            for (java.lang.reflect.Method method : processor.getDeclaredMethods()) {
+                Class<?>[] params = method.getParameterTypes();
+                if (params.length == 0 || params[0] != tagClass) continue;
+                XposedBridge.hookMethod(method, new XC_MethodHook() {
+                    @Override protected void beforeHookedMethod(MethodHookParam param) {
+                        stampPalette(param.args[0]);
+                    }
+                });
+                stamped++;
+            }
+            XposedBridge.log(TAG + ": palette stamp hooked on " + stamped + " request methods");
+        } catch (Throwable t) { XposedBridge.log(TAG + ": palette stamp hook failed " + t); }
+    }
+
+    /** Modes whose capture request never sets {@code mbPaletteEnable} itself, so this hook stamps it. */
+    private static boolean stampsPalette(String mode) {
+        return "high_pixel_mode".equals(mode) || "professional_mode".equals(mode);
+    }
+
+    private static void stampPalette(Object tag) {
+        if (tag == null) return;
+        try {
+            String mode = (String) XposedHelpers.getObjectField(tag, "mCaptureMode");
+            if (!stampsPalette(mode)) return;
+            // Only stamp when the user has actually moved the dial: the tone (w) and saturation (v)
+            // fields of Lut3dDataManager stay off-centre after a drag, even though the W palette flag
+            // is dropped the instant the shutter is tapped (the panel closes on that tap). Using W
+            // here would always miss the shot; w/v survive the close.
+            int[] wv = paletteFields(tag);
+            if (wv == null) {
+                XposedBridge.log(TAG + ": palette stamp: no lut manager, mode=" + mode);
+                return;
+            }
+            if (wv[0] == 0 && wv[1] == 0) return;
+            // This runs on every ApsProcessor request for the mode, so log only the false->true
+            // transition and stamp the rest silently (setBooleanField is idempotent).
+            if (!XposedHelpers.getBooleanField(tag, "mbPaletteEnable")) {
+                XposedBridge.log(TAG + ": palette stamp: mode=" + mode + " w=" + wv[0] + " v=" + wv[1]);
+                XposedHelpers.setBooleanField(tag, "mbPaletteEnable", true);
+            }
+        } catch (Throwable ignored) {
+            // a tag without the field keeps its own value
+        }
+    }
+
+    /** Returns [tone(w), saturation(v)] from the 3D-LUT manager, or null if it is absent. */
+    private static int[] paletteFields(Object tag) {
+        try {
+            Class<?> holder = XposedHelpers.findClass(
+                "com.oplus.camera.common.utils.Lut3dDataManager$b", cameraLoader);
+            Object manager = XposedHelpers.getStaticObjectField(holder, "a");
+            if (manager == null) return null;
+            return new int[] { XposedHelpers.getIntField(manager, "w"), XposedHelpers.getIntField(manager, "v") };
+        } catch (Throwable error) {
+            XposedBridge.log(TAG + ": high-pixel stamp: lut read failed " + error);
+            return null;
+        }
     }
 }

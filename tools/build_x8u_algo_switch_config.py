@@ -74,8 +74,16 @@ INDENT = 4
 # palette was colour-accurate in preview and uncoloured in the shot. PMA110's copy declares it for
 # common / portrait / aiHighPixel; X8U's stock file has those same three modes, so the same three
 # are extended here. Five insertions in total -- aiHighPixel carries a single camera entity.
+#
+# `master` (2026-10-18): the professional/master capture mode. ApsDataConvert.getApsModeName maps
+# the UI mode "professional_mode" to "master" on this platform (isSupportMasterModeV1), so
+# `getSupportCaptureAlgo` receives "master", not "professional". Master mode's own "palette" is
+# basic_tone (its tone/saturation dial), which never sets mbPaletteEnable, so the colour palette
+# node has to be declared here AND the tag stamped by X10FilterPort before the capture algorithm
+# list is chosen. Adding "master" extends the palette node to its camera-0 entity so the gallery's
+# color_palette re-render (色彩风格) can run on master-mode shots that carry src.image.
 PALETTE_KEY = "aps_algo_color_palette"
-PALETTE_MODES = ("common", "portrait", "aiHighPixel")
+PALETTE_MODES = ("common", "portrait", "aiHighPixel", "master")
 # The array close of each section, exactly as it appears in the stock text.
 CLOSE = "\n    ]"
 

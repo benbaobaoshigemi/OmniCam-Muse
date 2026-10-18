@@ -36,6 +36,8 @@ public final class HighPixelEffects {
     /** The photo mode's filter declaration; separate from the menu key, and a mode without it gets no filter feature. */
     private static final String FILTER_MODE = "key_photo_mode_filter";
     private static final String PALETTE = "key_support_palette";
+    /** BaseMode.H4/.x6 only write the capture keys (bb.s.e0 tone / bb.s.d0 saturation) when this is on. */
+    private static final String BASIC_TONE = "func_support_video_basic_tone";
     private static final String PROP_ENTRY = "persist.omnicam.aura.hpentry";
 
     private static final Set<String> answered = Collections.synchronizedSet(new HashSet<>());
@@ -77,7 +79,7 @@ public final class HighPixelEffects {
             @Override protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
                 String key = (String) param.args[0];
                 if (!FILTER_PROCESS.equals(key) && !FILTER_MENU.equals(key) && !FILTER_MODE.equals(key)
-                    && !PALETTE.equals(key)) return;
+                    && !PALETTE.equals(key) && !BASIC_TONE.equals(key)) return;
                 if (!Settings.get(ModuleSettings.HIGH_PIXEL_EFFECTS)) return;
                 Boolean answer = PALETTE.equals(key) ? paletteConfigured(paletteMode) : Boolean.TRUE;
                 param.setResult(answer);

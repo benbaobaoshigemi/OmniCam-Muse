@@ -51,12 +51,12 @@ PKJ110_PAYLOAD = {
         "b0ee50c1a3bbc9e1dcc20f2391a490c2",
     ),
     # Not a copy of PMA110's file: the device's own decoded stock text with the retroCamera block
-    # appended and the palette capture node added to common/portrait/aiHighPixel, so the payload
-    # stays "stock plus additions" like every other ported config.
+    # appended and the palette capture node added to common/portrait/aiHighPixel/master, so the
+    # payload stays "stock plus additions" like every other ported config.
     # Rebuilt by tools/build_x8u_algo_switch_config.py; see README sections 4.12 and 4.14.
     "oplus_camera_algo_switch_config": (
-        141729,
-        "10a2532d483d3c3357eb266f35b3142e",
+        141831,
+        "7aa941be81cf7cffa82553317a469a82",
     ),
     # The POP BasicTone decision tree: X8U's own decrypted decision config with the retro-camera
     # branches (and3 rear / and4 front) and the non-POP guard injected, so POP captures route

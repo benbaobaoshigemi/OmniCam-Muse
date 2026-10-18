@@ -22,8 +22,15 @@ import local.jiege.hook.common.Symbols;
  * the photo's filter.info: a palette capture (version 5 or later, isPalette or paletteAlgoUsed set)
  * stores src.image before BasicTone; this camera's captures (version 4) store it after BasicTone, ready
  * for the filter. So the lazy value is replaced by one that also asks the photo being edited: palette
- * captures and images without filter.info get palette mode, the camera's filter photos get the stock
- * filter editor.
+ * captures get palette mode, every other photo (no filter.info, or version 4) gets the stock filter
+ * editor.
+ *
+ * IMPORTANT (X8U): the camera stamps its master-mode palette shots with version 5 + isPalette=1, but its
+ * capture backend (the X9U libBasicTonePhoto bound over X8U's) does NOT write the src.image extension.
+ * The X10 palette pipeline therefore cannot re-apply the filter (resolvePaletteSrcOrientation fails with
+ * metaIndex=0 and runFilterStage=false), so a palette photo only gets BasicTone re-applied, not its
+ * filter. That is a camera-side capture-format gap, not something this hook can fix; this hook only
+ * keeps the entry visible and keeps non-palette photos on the filter path that does render.
  */
 final class GalleryPaletteScope {
     private static final String TAG = "GalleryPaletteScope";
@@ -35,6 +42,10 @@ final class GalleryPaletteScope {
     private static final int IS_PALETTE = 140;
     private static final int PALETTE_ALGO_USED = 144;
 
+    // True until the first photo is opened, so the palette editor's entry ("色彩风格") shows before
+    // PhotoEditorActivity.onCreate runs. onCreate then sets it to the actual per-photo answer:
+    // a version-5+ palette capture stays in palette mode, any other photo falls back to the ordinary
+    // filter editor (which is the only thing that renders correctly without src.image, see below).
     private static volatile boolean photoPalette = true;
 
     private GalleryPaletteScope() {}
@@ -78,19 +89,25 @@ final class GalleryPaletteScope {
     }
 
     private static boolean paletteCapture(Activity activity, Uri uri, ClassLoader classLoader) {
-        if (uri == null) return true;
+        if (uri == null) return false;
         Object container = null;
         try {
             container = XposedHelpers.newInstance(XposedHelpers.findClass(CONTAINER, classLoader));
             Object read = XposedHelpers.getStaticObjectField(XposedHelpers.findClass(OPEN_MODE, classLoader), "MODE_READ");
-            if (!(Boolean) XposedHelpers.callMethod(container, "setDataSource", activity, uri, read)) return true;
+            if (!(Boolean) XposedHelpers.callMethod(container, "setDataSource", activity, uri, read)) return false;
             byte[] info = (byte[]) XposedHelpers.callMethod(container, "getExtensionData", FILTER_INFO);
-            boolean palette = info == null || paletteSemantics(info);
+            // A photo without filter.info (no filter applied at capture, or a downloaded image) is
+            // NOT a palette photo: it must go through the ordinary filter path. Only a version-5+
+            // filter.info with isPalette/paletteAlgoUsed set is a palette capture. The old
+            // `info == null -> true` sent every such photo down the palette pipeline, where the
+            // filter stage is skipped (runFilterStage=false) and the palette meta read fails
+            // (resolvePaletteSrcOrientation invalid metaIndex=0), garbling the image.
+            boolean palette = info != null && paletteSemantics(info);
             Log.i(TAG, "editing " + uri + ": " + (palette ? "palette" : "filter") + " mode");
             return palette;
         } catch (Throwable error) {
             Log.e(TAG, "filter.info read failed for " + uri, error);
-            return true;
+            return false;
         } finally {
             if (container != null) {
                 try {
