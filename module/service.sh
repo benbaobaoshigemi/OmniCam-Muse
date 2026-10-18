@@ -127,6 +127,19 @@ find "$ASSET_DIR" "$PLD_APP" -type d -exec chmod 0755 {} \;
 find "$ASSET_DIR" "$PLD_APP" -type f -exec chmod 0644 {} \;
 restorecon -R "$ASSET_DIR" "$APP/files/odm" 2>/dev/null || true
 
+# POP capture decision (X8U only). The stock /odm copy of oplus_camera_preview_decision_config.json
+# is an encrypted container, so the POP BasicTone branches (rear/front retro + non-POP guard) never
+# reach the capture decision and the POP sliders do nothing on the shot. The patched plaintext
+# (payload_pkj110/pop_decision.json, tools/patch_x8u_pop_decision.py) is staged here and served by
+# pop_path_remap.cpp in place of the stock file. PMA110 keeps its own X9U decision, which already
+# carries the POP branches and is bound over /odm by post-fs-data.sh.
+if [ "$(getprop ro.product.model 2>/dev/null)" = PKJ110 ]; then
+    cp -f "$MODDIR/payload_pkj110/pop_decision.json" "$ASSET_DIR/oplus_camera_preview_decision_config.json"
+    chown "$APP_UID:$APP_UID" "$ASSET_DIR/oplus_camera_preview_decision_config.json"
+    chmod 0644 "$ASSET_DIR/oplus_camera_preview_decision_config.json"
+    restorecon "$ASSET_DIR/oplus_camera_preview_decision_config.json" 2>/dev/null || true
+fi
+
 # Normal-mode 25MP unlock (tools/patch_25mp.py): the relaxed config copies; the settings hook adds the
 # "enabled" marker while the switch is on and unlock25mp.cpp redirects reads to these copies.
 #

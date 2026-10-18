@@ -58,6 +58,16 @@ PKJ110_PAYLOAD = {
         141729,
         "10a2532d483d3c3357eb266f35b3142e",
     ),
+    # The POP BasicTone decision tree: X8U's own decrypted decision config with the retro-camera
+    # branches (and3 rear / and4 front) and the non-POP guard injected, so POP captures route
+    # through BasicTone and the 光感/饱和度/色温/色调 sliders reach the shot. Plaintext: it is
+    # staged into the camera's files and served by the native path hook, never bound over /odm
+    # (the stock /odm copy is an encrypted container). Rebuilt by tools/patch_x8u_pop_decision.py
+    # from the decrypted X8U decision (tools/decrypt_oplus_config.py).
+    "pop_decision.json": (
+        362758,
+        "b41dd01f42ea50f8a8d9f60a4e2e3657",
+    ),
 }
 # X9U payload must stay untouched by PKJ110 work.
 PMA110_PAYLOAD = {
@@ -72,7 +82,7 @@ PMA110_PAYLOAD = {
 }
 MODULE_SCRIPTS = {
     "post-fs-data.sh": (19975, "f5415ec4be66cc699b1d7880f319d2ea"),
-    "service.sh": (10647, "ad2bbe459a51114b97a120a8211f2e1c"),
+    "service.sh": (11630, "221461f2f505c3ac13b3c31f438dfe55"),
     "post-mount.sh": (9505, "2512f1bb1acd1fcb8f4c798c932a0e89"),
     "x8u-fix-pop.sh": (9181, "2964db9cccf9d7197ece95eab99af699"),
     "x8u-pop-diag.sh": (7485, "6fc6c9749a3b15c21e06d08b62acf96a"),

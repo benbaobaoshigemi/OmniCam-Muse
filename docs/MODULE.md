@@ -35,6 +35,24 @@ POP 的光感、自然饱和度、色温、色调随拍照参数以 `KEY_MASTER_
 
 10X 条纹：长焦（物理相机 4）硬件 IPE 离线处理在“10bit 输入 → 8bit 输出”时输出损坏，与 ISP 调校文件无关。让 IPE 保持 10bit 输出、由 BasicTone 转 8bit 即绕开。
 
+### X8U（PKJ110）的四道门
+
+以上四道门落在 PMA110 专属的 `payload/oplus_camera_preview_decision_config.json`（明文）与
+`libAlgoInterface.so`（79 MB，lighthouse 传感器调校）上，X8U 不能照搬：它的 decision 在盘上是
+**加密容器**（`0101` 头 + AES-ECB，key 在 `libOplusSecurity.so`），`libAlgoInterface.so` 是 60 MB 的
+zf 传感器版本（两版算法节点集不同）。因此 X8U 只落地了第 1 道门（`payload_pkj110/oplus_camera_algo_switch_config`
+已加 `retroCamera` 块，`service.sh` 也把 `retroCamera` 加进成片 Ultra HDR 名单）。
+
+第 2 道门（决策规则）用**路径重定向注入**补上，不碰加密回写：
+
+- `tools/decrypt_oplus_config.py` 解开 X8U 的 decision 明文，`tools/patch_x8u_pop_decision.py` 在其
+  `SINGLE_ALGO_BASIC_TONE` 节点的 `condition.or` 注入后置 POP 分支（`and3`）、前置 POP 分支（`and4`）
+  和非 POP 守卫（`and2.not`），产物是 `payload_pkj110/pop_decision.json`（明文）。
+- `service.sh` 在 PKJ110 上把它 stage 成 `files/pop_port/oplus_camera_preview_decision_config.json`；
+  `pop_path_remap.cpp` 把相机读 `/odm/etc/camera/config/oplus_camera_preview_decision_config.json` 的
+  调用重定向到这份明文副本（存在即生效，无开关）。PMA110 仍走 bind 的 X9U decision。
+- 第 3、4 道门（`.so` NOP）需对 X8U 的 `libAlgoInterface.so` 重新定位补丁地址，未做（高风险）。
+
 ## 调色盘：人像与前置成片
 
 调色盘算法 `aps_algo_color_palette` 在后置人像、前置人像、前置拍照的算法清单里，但流水线没有节点去执行它。`libAlgoInterface.so` 在三个类（`RearBokeh25021`、`FrontBokeh25021`、`FrontNormal25021`）的 `addCommonPipelines` 入口跳转到库末尾（`0x2902860` 起，约 1.6 KB，代码段 `p_filesz/p_memsz` 扩到 `0x2903000`）的共用例程：
