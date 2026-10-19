@@ -39,6 +39,11 @@ final class PopHighPixel {
                     if (tag == null) return;
                     Object mode = XposedHelpers.getObjectField(tag, "mCaptureMode");
                     if (!(mode instanceof String) || !((String) mode).toLowerCase().contains("retro")) return;
+                    // POP_HIGH_PIXEL is device-gated (no settings UI): its default is isPma110(), but a
+                    // stale persisted "true" from before the gate was added can override that default via
+                    // Settings.get's getBoolean(key, default). AND in the device check directly so a PKJ110
+                    // (X8U) can never re-enter the photo-mode rewrite that dumps a full-sensor RAW.
+                    if (!ModuleSettings.isPma110()) return;
                     if (!Settings.get(ModuleSettings.POP_HIGH_PIXEL)) return;
                     // POP's face retouch (libOPAlgoCamAiUnifySkin via faceBaseRetouchProcess) is set up
                     // for POP's stock 12.5M output and reads past its buffers on a 25M image (SIGSEGV

@@ -196,7 +196,7 @@ public final class ModuleSettings {
     }
 
     /** True on the Find X9 Ultra (PMA110), the only device the 25MP unlock's config copies fit. */
-    private static boolean isPma110() {
+    public static boolean isPma110() {
         return contains("PMA110", android.os.Build.MODEL) || contains("PMA110", android.os.Build.DEVICE);
     }
 
