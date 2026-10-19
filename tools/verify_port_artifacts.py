@@ -68,6 +68,14 @@ PKJ110_PAYLOAD = {
         362758,
         "b41dd01f42ea50f8a8d9f60a4e2e3657",
     ),
+    # X8U stock libAlgoInterface.so with the BasicTone "all-zero skip" NOP-ed at 0x1e7ae00
+    # (door #4, docs/MODULE.md §32/34). Built by tools/patch_x8u_basictone_skip.py from
+    # port-x8u/_pristine/libAlgoInterface_x8u_stock.so. Bound/overwritten on PKJ110 only by
+    # post-mount.sh; never placed in system/ (metamount overlays it unconditionally).
+    "lib64/libAlgoInterface.so": (
+        60867488,
+        "55e78c21a7554b8e7ec7abe452044436",
+    ),
 }
 # X9U payload must stay untouched by PKJ110 work.
 PMA110_PAYLOAD = {
@@ -83,7 +91,7 @@ PMA110_PAYLOAD = {
 MODULE_SCRIPTS = {
     "post-fs-data.sh": (19975, "f5415ec4be66cc699b1d7880f319d2ea"),
     "service.sh": (11630, "221461f2f505c3ac13b3c31f438dfe55"),
-    "post-mount.sh": (9505, "2512f1bb1acd1fcb8f4c798c932a0e89"),
+    "post-mount.sh": (10975, "87f84b5ccf2005fd908a4c943bf874bc"),
     "x8u-fix-pop.sh": (9181, "2964db9cccf9d7197ece95eab99af699"),
     "x8u-pop-diag.sh": (7485, "6fc6c9749a3b15c21e06d08b62acf96a"),
     "x8u-fix-vibrant.sh": (8919, "c1592457cb521e1016a13c68c51bf513"),

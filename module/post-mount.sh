@@ -167,6 +167,28 @@ else
     fi
     bind_library "$MODDIR/system/odm/lib64/libBasicTonePhotoX10.so" libBasicTonePhoto.so
     log "PKJ110: basic-tone now $(md5sum /odm/lib64/libBasicTonePhoto.so 2>/dev/null | cut -d' ' -f1)"
+
+    # POP capture RAW fix (door #4, docs/MODULE.md §32/34): X8U stock libAlgoInterface.so has the
+    # BasicTone "all-zero skip" still armed. basicToneProcessV1 ORs the four master sliders
+    # (w20..w23); when they are all zero it cbz-jumps to a face-rectify fallback that skips the
+    # P010->8-bit conversion, so hybridraw's P010 goes straight to the encoder and the main JPEG
+    # comes out as raw pixels (gallery thumbnail shows, image is blank). X9U NOP-ed this at
+    # 0x2040688; X8U's corresponding cbz sits at 0x1e7ae00 and is NOP-ed in the payload copy below.
+    # This file is intentionally NOT in system/ (metamount would overlay it unconditionally on both
+    # devices). The f2fs per-file mount here is rw, so overwriting it in place persists across a
+    # soft reboot (mountify keeps the overlay frozen).
+    BTFIX_SRC="$MODDIR/payload_pkj110/lib64/libAlgoInterface.so"
+    if [ -f "$BTFIX_SRC" ]; then
+        if [ "$(md5sum "$BTFIX_SRC" | cut -d' ' -f1)" != "$(md5sum /odm/lib64/libAlgoInterface.so 2>/dev/null | cut -d' ' -f1)" ]; then
+            cp -f "$BTFIX_SRC" /odm/lib64/libAlgoInterface.so 2>>"$LOG" \
+                && log "PKJ110: basictone-skip NOP applied $(md5sum /odm/lib64/libAlgoInterface.so | cut -d' ' -f1)" \
+                || log "PKJ110: basictone-skip NOP FAIL"
+        else
+            log "PKJ110: basictone-skip NOP already applied"
+        fi
+    else
+        log "PKJ110: basictone-skip NOP source missing"
+    fi
 fi
 
 log "end profile=$PROFILE"
