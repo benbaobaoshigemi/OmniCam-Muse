@@ -91,6 +91,9 @@ public final class ModuleSettings {
     public static final String SOFT_LIGHT_MEDIUM_BLACK_MIST = "soft_light_medium_black_mist";
     public static final String SOFT_LIGHT_STRONG_WHITE_MIST = "soft_light_strong_white_mist";
 
+    /** Experimental: share of the simulated filter in the replacement, in percent (applies immediately). */
+    public static final String SOFT_LIGHT_STRENGTH = "soft_light_strength";
+
     /** Experimental: 和光 capture renders Portra 400's emulsion scatter, halation and DIR edges (实验/Portra光学) instead of the stock highlight blend. */
     public static final String MASTER_PORTRA_PHYSICAL = "master_portra_physical";
 
@@ -127,6 +130,7 @@ public final class ModuleSettings {
 
     public static int defaultInt(String key) {
         if (SHUTTER_VOLUME.equals(key)) return 60;
+        if (SOFT_LIGHT_STRENGTH.equals(key)) return 100;
         if (NATURAL_SOFTEN.equals(key)) return 0;
         if (MASTER_FILM_DENSITY_C.equals(key) || MASTER_FILM_DENSITY_M.equals(key) || MASTER_FILM_DENSITY_Y.equals(key)) return 100;
         if (MASTER_LOOK_PRINT.equals(key) || MASTER_HNCS_INTENT.equals(key) || MASTER_HNCS_CURVE.equals(key)) return 0;

@@ -38,14 +38,17 @@
 #include <android/hardware_buffer.h>
 #include <android/log.h>
 #include <jni.h>
+#include <sys/system_properties.h>
 
 #include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <map>
+#include <mutex>
 #include <thread>
 #include <vector>
 
@@ -70,28 +73,215 @@ std::atomic<int> gLevels{0};  // replaced levels, bit = ProMist type; a clear bi
 constexpr size_t kSoftEnable = 0x48;
 constexpr size_t kSoftType = 0x4c;
 
+// Levels, preferring the property: the camera process cannot read the module's preferences, and a
+// property also lets the mask change between two shots without reopening the camera.
+int levelsNow() {
+    char value[PROP_VALUE_MAX] = {};
+    if (__system_property_get("persist.omnicam.aura.softlight", value) > 0) {
+        return std::atoi(value);
+    }
+    return gLevels.load();
+}
+
+// Replacement strength in percent: 0 leaves the frame as it is, 100 is the simulated filter, and
+// anything in between blends the two. The weights scale down and the core takes back what they
+// give up, so a weaker filter is a thinner halo rather than a darker picture (core + sum of the
+// weights is the transmission, so at 0 the composite returns the source unchanged).
+// The name stops at 31 characters: a property name is at most PROP_NAME_MAX - 1 long.
+int strengthNow() {
+    char value[PROP_VALUE_MAX] = {};
+    if (__system_property_get("persist.omnicam.aura.slgain", value) > 0) {
+        return std::clamp(std::atoi(value), 0, 400);
+    }
+    return 100;
+}
+
 const SoftFilter *filterFor(const void *param) {
     auto *p = static_cast<const uint8_t *>(param);
     if (!p || !p[kSoftEnable]) return nullptr;
     int32_t type;
     std::memcpy(&type, p + kSoftType, sizeof type);
-    if (type < 0 || type > 2 || !(gLevels.load() & (1 << type))) return nullptr;
+    if (type < 0 || type > 2 || !(levelsNow() & (1 << type))) return nullptr;
     if (type == 1) return &kHdf;
     if (type == 0) return &kBlackMist;
     if (type == 2) return &kWhiteMist;
     return nullptr;
 }
 
+// ---- probing ---------------------------------------------------------------------------------
+// MsSetEffectIntValue / MsSetEffectBooleanValue are where *every* render path pushes the filter
+// parameters: preview and capture alike, whichever MsRender* entry they end up in. Logging the
+// keys therefore says what the capture actually receives, without hooking the renderer at all.
+
+using SetIntValue = int (*)(void *effect, const char *key, int value);
+using SetBoolValue = int (*)(void *effect, const char *key, int value);
+SetIntValue origSetInt;
+SetBoolValue origSetBool;
+
+// A key string normally lives in .rodata, so the pointer repeats: report each new one once, and
+// fall back to a slow drip for keys built on the fly (snprintf into a scratch buffer).
+bool firstSighting(const char *key, int slot) {
+    static const char *seen[2][48] = {};
+    static int n[2] = {0, 0};
+    for (int i = 0; i < n[slot]; ++i) {
+        if (seen[slot][i] == key) return false;
+    }
+    if (n[slot] < 48) {
+        seen[slot][n[slot]++] = key;
+        return true;
+    }
+    return false;
+}
+
+bool drip(int period) {
+    static std::atomic<uint32_t> k{0};
+    return (k.fetch_add(1, std::memory_order_relaxed) % uint32_t(period)) == 0;
+}
+
+int hookSetInt(void *effect, const char *key, int value) {
+    if (!origSetInt) return 0;
+    if (key && (firstSighting(key, 0) || drip(1500))) {
+        __android_log_print(ANDROID_LOG_INFO, TAG, "setInt  %s = %d", key, value);
+    }
+    return origSetInt(effect, key, value);
+}
+
+int hookSetBool(void *effect, const char *key, int value) {
+    if (!origSetBool) return 0;
+    if (key && (firstSighting(key, 1) || drip(1500))) {
+        __android_log_print(ANDROID_LOG_INFO, TAG, "setBool %s = %d", key, value);
+    }
+    return origSetBool(effect, key, value);
+}
+
+// Which MsRender* entry the frames actually come through, and what the effect param holds there.
+void probeRender(const char *what, const void *param) {
+    if (!drip(700)) return;
+    const auto *p = static_cast<const uint8_t *>(param);
+    uint8_t enable = 0;
+    int32_t type = -1;
+    if (p) {
+        enable = p[kSoftEnable];
+        std::memcpy(&type, p + kSoftType, sizeof type);
+    }
+    __android_log_print(ANDROID_LOG_INFO, TAG, "render %s param=%p enable=%u type=%d levels=%x",
+                        what, param, unsigned(enable), type, gLevels.load());
+}
+
+// The library exports nine render entries and only two are replaced below. The rest are
+// pass-through probes: they name the entry the capture actually goes through, which the
+// replaced pair cannot tell us when neither fires. Every entry takes its arguments in the
+// first eight integer registers, so forwarding eight words is safe where the real signature
+// is shorter, and nothing is modified.
+void probeEntry(const char *what, int slot) {
+    static std::atomic<uint32_t> seen[6];
+    uint32_t k = seen[slot].fetch_add(1, std::memory_order_relaxed);
+    if (k == 0 || k % 200 == 0) {
+        __android_log_print(ANDROID_LOG_INFO, TAG, "entry %s #%u", what, k + 1);
+    }
+}
+
+using RenderAny = int (*)(void *, void *, void *, void *, void *, void *, void *, void *);
+RenderAny origRender;
+RenderAny origRenderHostBuffer;
+// SMsHostBufferInfo: four CPU plane pointers, four row strides in bytes, then the size and the
+// coding. The offsets come from MsDoRenderHDRHostBuffer, which copies +0x00..+0x2f as three
+// vectors and reads the ints from +0x30 on.
+struct HostBufferInfo {
+    void *plane[4];      // +0x00, one pointer per plane
+    uint32_t stride[4];  // +0x20, row stride in bytes
+    uint32_t width;      // +0x30
+    uint32_t height;     // +0x34
+    uint32_t pixFmt;     // +0x38
+    uint32_t primaries;  // +0x3c
+    uint32_t transfer;   // +0x40, 2 = HLG
+    uint32_t matrix;     // +0x44, 0 / 1 / 2 = BT.601 / BT.709 / BT.2020
+    uint32_t range;      // +0x48, 1 = full
+};
+// The capture entry: MsDoRenderHDRHostBuffer(void*, void*, const SMsHostBufferInfo*, unsigned,
+// SMsHostBufferInfo*, const SMsEffectParam&, const SMsHDRMetadata&, int), from the PLT target name.
+using RenderHdrHostBuffer = int (*)(void *, void *, const HostBufferInfo *, unsigned, HostBufferInfo *, void *, void *, int);
+RenderHdrHostBuffer origRenderHdrHostBuffer;
+RenderAny origRenderTexture;
+RenderAny origRenderTextureWithPosition;
+
+#define SOFT_LIGHT_PASS_THROUGH(fn, original, slot, label)                                              \
+    int fn(void *a0, void *a1, void *a2, void *a3, void *a4, void *a5, void *a6, void *a7) {           \
+        probeEntry(label, slot);                                                                       \
+        return original ? original(a0, a1, a2, a3, a4, a5, a6, a7) : 0;                                 \
+    }
+
+SOFT_LIGHT_PASS_THROUGH(hookRender, origRender, 0, "MsRender")
+SOFT_LIGHT_PASS_THROUGH(hookRenderHostBuffer, origRenderHostBuffer, 1, "MsRenderHostBuffer")
+SOFT_LIGHT_PASS_THROUGH(hookRenderTexture, origRenderTexture, 3, "MsRenderTexture")
+SOFT_LIGHT_PASS_THROUGH(hookRenderTextureWithPosition, origRenderTextureWithPosition, 4, "MsRenderTextureWithPosition")
+
+#undef SOFT_LIGHT_PASS_THROUGH
+
+// The capture itself is handled further down, once the P010 scatter is in scope.
+
+// Diagnostic switch: leave the stock soft light on for the render and only add the replacement on
+// top. It tells whether the quality the capture loses comes from clearing the enable byte.
+bool keepStock() {
+    char value[PROP_VALUE_MAX] = {};
+    return __system_property_get("persist.omnicam.aura.slkeep", value) > 0 && std::atoi(value) != 0;
+}
+
 // Stock ProMist off for one render call.
 class StockSoftOff {
 public:
-    explicit StockSoftOff(const void *param) : flag_(const_cast<uint8_t *>(static_cast<const uint8_t *>(param)) + kSoftEnable) {
+    explicit StockSoftOff(const void *param)
+        : flag_(const_cast<uint8_t *>(static_cast<const uint8_t *>(param)) + kSoftEnable), saved_(*flag_) {
         *flag_ = 0;
     }
-    ~StockSoftOff() { *flag_ = 1; }
+    ~StockSoftOff() { *flag_ = saved_; }
+
 private:
     uint8_t *flag_;
+    uint8_t saved_;
 };
+
+// ---- what the capture pipeline hands us --------------------------------------------------------
+
+// The capture pipeline sometimes works on a proxy (1280x960 for a 3072x4096 shot) and sometimes on
+// the full frame, and which one a shot came from decides whether a missing detail is ours or the
+// pipeline's: one line per shot says it, in megapixels.
+//
+// One line per distinct render shape rather than per call: the texture and host entries fire for
+// every frame of the preview, and only a change tells us anything.
+void logPass(const char *entry, uint32_t width, uint32_t height, uint32_t pixFmt, uint32_t transfer, uint32_t stride0,
+             uint32_t stride1, const void *param) {
+    const uint64_t area = uint64_t(width) * height;
+    uint32_t signature = (width << 16) ^ (height << 4) ^ pixFmt ^ (transfer << 20) ^ (uint32_t(entry[0]) << 28);
+    static std::atomic<uint32_t> last{0};
+    if (last.exchange(signature) == signature) return;
+    const auto *p = static_cast<const uint8_t *>(param);
+    int32_t type = -1;
+    if (p) std::memcpy(&type, p + kSoftType, sizeof type);
+    __android_log_print(ANDROID_LOG_INFO, TAG, "pass %s %ux%u %.1fMP fmt %u tr %u stride %u/%u soft %u/%d levels %x",
+                        entry, width, height, double(area) / 1e6, pixFmt, transfer, stride0, stride1,
+                        p ? unsigned(p[kSoftEnable]) : 0u, type, levelsNow());
+}
+
+// One shot renders its buffer once, so a second scatter into the same address a moment later is
+// the same frame again (a retry, or a second pass over the same output): applying the filter twice
+// would double the halo. The buffers come from a pool, so the window is short enough that the next
+// shot can never match.
+bool sameFrameAgain(uint32_t width, uint32_t height, const void *plane) {
+    static std::mutex lock;
+    static const void *lastPlane = nullptr;
+    static uint32_t lastWidth = 0, lastHeight = 0;
+    static std::chrono::steady_clock::time_point lastTime{};
+    auto now = std::chrono::steady_clock::now();
+    std::lock_guard<std::mutex> guard(lock);
+    bool again = plane && plane == lastPlane && width == lastWidth && height == lastHeight &&
+                 now - lastTime < std::chrono::milliseconds(500);
+    lastPlane = plane;
+    lastWidth = width;
+    lastHeight = height;
+    lastTime = now;
+    return again;
+}
 
 enum Transfer { kSrgb, kHlg };
 
@@ -101,6 +291,7 @@ struct LevelWeights {
     float core[3];
     float transmission[3];
     float w[3][kSoftLevels];
+    float strength;  // 1 = the simulated filter, 0 = untouched
 };
 
 LevelWeights levelWeights(const SoftFilter &f, float diagonalPx, int builtLevels) {
@@ -123,6 +314,18 @@ LevelWeights levelWeights(const SoftFilter &f, float diagonalPx, int builtLevels
         for (int i = 0; i < kSoftLevels; i++) {
             int level = std::min(i + shift, builtLevels);  // levels the image is too small for go to the coarsest
             out.w[c][level] += f.weights[r0][c][i] * (1 - t) + f.weights[r1][c][i] * t;
+        }
+    }
+    out.strength = strengthNow() / 100.0f;
+    if (out.strength != 1.0f) {
+        for (int c = 0; c < 3; c++) {
+            float sum = 0;
+            for (int i = 0; i < kSoftLevels; i++) sum += out.w[c][i];
+            // Below 100% the weights shrink and the core takes back what they give up, so the frame
+            // fades back to the source. Above it the core would go negative and subtract light
+            // around every edge; holding it at zero turns over-drive into "pure diffusion" instead.
+            out.core[c] = std::max(0.0f, out.core[c] + (1.0f - out.strength) * sum);
+            for (int i = 0; i < kSoftLevels; i++) out.w[c][i] *= out.strength;
         }
     }
     return out;
@@ -178,21 +381,23 @@ inline void shoulder(float rgb[3], float top) {
 // Stops below the clip where the boost starts: the top half stop of the frame, the shoulder knee on display white.
 inline float boostStops(Transfer tr) { return tr == kHlg ? 0.5f : -std::log2(kShoulder); }
 
-// Scatter source: pixels near the clip scaled up, gain times at the clip.
-inline void boostClipped(float rgb[3], float log2Top, float stops, float gain) {
+// Scatter source: pixels near the clip scaled up, gain times at the clip. The threshold is passed
+// precomputed so the common below-threshold pixel costs one compare instead of a log2.
+inline void boostClipped(float rgb[3], float boostFloor, float log2TopMinusStops, float invStops, float gain) {
     float peak = std::max(rgb[0], std::max(rgb[1], rgb[2]));
-    if (peak <= 0.0f) return;
-    float t = (std::log2(peak) - (log2Top - stops)) / stops;
-    if (t <= 0.0f) return;
-    float s = 1.0f + (gain - 1.0f) * std::min(t, 1.0f);
+    if (peak <= boostFloor) return;  // covers peak <= 0, the floor is positive
+    float t = (std::log2(peak) - log2TopMinusStops) * invStops;
+    if (t >= 1.0f) t = 1.0f;
+    float s = 1.0f + (gain - 1.0f) * t;
     for (int c = 0; c < 3; c++) rgb[c] *= s;
 }
 
-// Core gain for a neighbourhood whose peak channel averages `peak`.
-inline float coreGain(float peak, float log2Top, float gain) {
-    if (gain <= 1.0f || peak <= 0.0f) return 1.0f;
-    float t = std::clamp((std::log2(peak) - (log2Top - kSourceStops)) / kSourceStops, 0.0f, 1.0f);
-    return 1.0f + (gain - 1.0f) * t;
+// Core gain for a neighbourhood whose peak channel averages `peak`. Floors and ceiling passed in:
+// outside them the answer is constant, and only between them is a log2 worth its cost.
+inline float coreGain(float peak, float floorP, float ceilP, float log2TopMinusStops, float invStops, float gain) {
+    if (gain <= 1.0f || peak <= floorP) return 1.0f;
+    if (peak >= ceilP) return gain;
+    return 1.0f + (gain - 1.0f) * ((std::log2(peak) - log2TopMinusStops) * invStops);
 }
 
 // ---- capture: CPU pyramid on the P010 buffer --------------------------------------------------
@@ -203,7 +408,9 @@ void parallelRows(int rows, F &&body) {
     std::vector<std::thread> pool;
     for (int k = 0; k < n; k++) {
         pool.emplace_back([&, k] {
-            for (int y = k; y < rows; y += n) body(y);
+            // Contiguous blocks rather than a stride: neighbouring rows read overlapping source
+            // rows, so the row cache of the first downsample finds four of its six rows warm.
+            for (int y = int(int64_t(rows) * k / n); y < int(int64_t(rows) * (k + 1) / n); y++) body(y);
         });
     }
     for (auto &t : pool) t.join();
@@ -222,20 +429,21 @@ inline int reflect(int i, int n) {  // cv2.BORDER_REFLECT, as the weights were f
 }
 
 // PASS_DOWN: every tap sits between four texels, i.e. a 2x2 mean at an integer offset.
+constexpr struct { int dx, dy; float w; } kDownTaps[] = {
+    {0, 0, 0.125f}, {-1, -1, 0.125f}, {1, -1, 0.125f}, {-1, 1, 0.125f}, {1, 1, 0.125f},
+    {-2, -2, 0.03125f}, {2, -2, 0.03125f}, {-2, 2, 0.03125f}, {2, 2, 0.03125f},
+    {-2, 0, 0.0625f}, {2, 0, 0.0625f}, {0, -2, 0.0625f}, {0, 2, 0.0625f}};
+
 template <typename Fetch>
 Image downsample(int sw, int sh, Fetch fetch) {
     Image d;
     d.w = sw / 2;
     d.h = sh / 2;
     d.px.assign(size_t(d.w) * d.h * 3, 0.0f);
-    static const struct { int dx, dy; float w; } taps[] = {
-        {0, 0, 0.125f}, {-1, -1, 0.125f}, {1, -1, 0.125f}, {-1, 1, 0.125f}, {1, 1, 0.125f},
-        {-2, -2, 0.03125f}, {2, -2, 0.03125f}, {-2, 2, 0.03125f}, {2, 2, 0.03125f},
-        {-2, 0, 0.0625f}, {2, 0, 0.0625f}, {0, -2, 0.0625f}, {0, 2, 0.0625f}};
     parallelRows(d.h, [&](int y) {
         for (int x = 0; x < d.w; x++) {
             float acc[3] = {0, 0, 0};
-            for (auto &tap : taps) {
+            for (auto &tap : kDownTaps) {
                 int x0 = 2 * x + tap.dx, y0 = 2 * y + tap.dy;
                 float box[3] = {0, 0, 0};
                 for (int j = 0; j < 2; j++)
@@ -332,26 +540,18 @@ inline void rgbToYuvDelta(const float d[3], const YuvCoding &c, float &dy, float
     dv = cr * (c.full ? 1023.0f : 896.0f);
 }
 
-void scatterP010(AHardwareBuffer *ahb, const SoftFilter &filter, Transfer tr, YuvCoding coding) {
-    AHardwareBuffer_Desc desc{};
-    AHardwareBuffer_describe(ahb, &desc);
-    P010 img;
-    img.w = int(desc.width) & ~1;
-    img.h = int(desc.height) & ~1;
-    // API 29; the module's minimum is 28.
-    using LockPlanes = int (*)(AHardwareBuffer *, uint64_t, int32_t, const ARect *, AHardwareBuffer_Planes *);
-    static auto lockPlanes = reinterpret_cast<LockPlanes>(dlsym(RTLD_DEFAULT, "AHardwareBuffer_lockPlanes"));
-    if (!lockPlanes ||
-        lockPlanes(ahb, AHARDWAREBUFFER_USAGE_CPU_READ_OFTEN | AHARDWAREBUFFER_USAGE_CPU_WRITE_OFTEN, -1, nullptr, &img.planes) != 0 ||
-        img.planes.planeCount < 3) {
-        __android_log_print(ANDROID_LOG_ERROR, TAG, "capture: P010 buffer not lockable (format 0x%x)", desc.format);
-        return;
-    }
+// The scatter itself. It only needs the plane descriptors, so the AHardwareBuffer path and the
+// plain host buffers (capture on this device) share the same code.
+void scatterLockedP010(P010 &img, const SoftFilter &filter, Transfer tr, YuvCoding coding) {
     // 10-bit codes at the top of the word leave the low 6 bits empty.
     bool lowBits = false;
     for (int r = 0; r < img.h && !lowBits; r += 97)
         for (int x = 0; x < img.w; x += 13) lowBits |= (*img.y(x, r) & 0x3f) != 0;
     coding.msb = !lowBits;
+
+    // Stage timings, one line per capture: the full-size pass costs well over a second and the
+    // split says which stage to work on next.
+    const auto t0 = std::chrono::steady_clock::now();
 
     // Level 0: scene light of every pixel (chroma shared by its 2x2 block), half precision.
     struct {
@@ -374,27 +574,80 @@ void scatterP010(AHardwareBuffer *ahb, const SoftFilter &filter, Transfer tr, Yu
                 }
         }
     });
+    const auto t1 = std::chrono::steady_clock::now();
 
     std::vector<Image> levels;
     {
         int w = l0.w, h = l0.h;
         float log2Top = std::log2(topOf(tr)), stops = boostStops(tr), boost = sourceGain(filter);
-        auto fetch0 = [&](int x, int y, float v[3]) {
-            l0.get(x, y, v);
-            boostClipped(v, log2Top, stops, boost);
+        const float boostFloor = std::exp2(log2Top - stops), log2TopMinusStops = log2Top - stops, invStops = 1.0f / stops;
+        // The first step reads each source row up to thirteen times, and the boost's log2 is a
+        // hotspot at full size, so every thread keeps the rows it is reading pre-boosted: with
+        // blocked row partitioning the next output row finds four of its six rows warm. A row's
+        // cache slot is its index mod six — the six rows of a window are consecutive, so a
+        // sliding window overwrites exactly the row it evicts — and the generation stamp keeps a
+        // row cached for one shot out of the next. The taps then read the rows directly: a tap
+        // is four pointer reads out of the 6x6 window it touches, not four fetch callbacks.
+        static std::atomic<uint64_t> scatterGen{0};
+        const uint64_t gen = ++scatterGen;
+        struct Slot {
+            uint64_t gen = 0;
+            int y = -1, w = 0;
+            std::vector<float> px;
         };
-        levels.push_back(downsample(w, h, fetch0));
+        auto boostedRow = [&](int ry) -> const float * {
+            static thread_local Slot slots[6];
+            Slot &s = slots[ry % 6];
+            if (s.gen != gen || s.y != ry || s.w != l0.w) {
+                s.gen = gen;
+                s.y = ry;
+                s.w = l0.w;
+                s.px.resize(size_t(l0.w) * 3);
+                for (int i = 0; i < l0.w; i++) {
+                    float t[3];
+                    l0.get(i, ry, t);
+                    boostClipped(t, boostFloor, log2TopMinusStops, invStops, boost);
+                    std::memcpy(&s.px[size_t(i) * 3], t, sizeof t);
+                }
+            }
+            return s.px.data();
+        };
+        Image first;
+        first.w = w / 2;
+        first.h = h / 2;
+        first.px.assign(size_t(first.w) * first.h * 3, 0.0f);
+        parallelRows(first.h, [&](int y) {
+            const float *r[6];
+            for (int j = 0; j < 6; j++) r[j] = boostedRow(reflect(2 * y - 2 + j, h));
+            for (int x = 0; x < first.w; x++) {
+                float acc[3] = {0, 0, 0};
+                for (auto &tap : kDownTaps) {
+                    const int u = 2 * x + tap.dx;
+                    const size_t o0 = size_t(reflect(u, w)) * 3, o1 = size_t(reflect(u + 1, w)) * 3;
+                    const float *ra = r[tap.dy + 2], *rb = r[tap.dy + 3];
+                    const float w4 = tap.w * 0.25f;
+                    for (int c = 0; c < 3; c++) acc[c] += w4 * (ra[o0 + c] + ra[o1 + c] + rb[o0 + c] + rb[o1 + c]);
+                }
+                std::memcpy(first.at(x, y), acc, sizeof acc);
+            }
+        });
+        levels.push_back(std::move(first));
         while (int(levels.size()) < kSoftLevels - 1 && std::min(levels.back().w, levels.back().h) >= 4) {
             const Image &s = levels.back();
             levels.push_back(downsample(s.w, s.h, [&](int x, int y, float v[3]) { std::memcpy(v, s.at(x, y), 3 * sizeof(float)); }));
         }
     }
+    const auto t2 = std::chrono::steady_clock::now();
     int built = int(levels.size());
     LevelWeights lw = levelWeights(filter, std::hypot(float(l0.w), float(l0.h)), built);
     float gain = sourceGain(filter), log2Top = std::log2(topOf(tr));
     int gateLevel = sourceLevel(filter, std::hypot(float(l0.w), float(l0.h)), built);
     Image gate;
     if (gain > 1.0f) gate = levels[gateLevel - 1];
+    // coreGain thresholds precomputed: the gate covers the top kSourceStops, and outside that
+    // band the gain is constant, so the per-pixel log2 only runs for genuinely bright gates.
+    const float gateFloor = std::exp2(log2Top - kSourceStops), gateCeil = std::exp2(log2Top);
+    const float gateLog2TopMinusStops = log2Top - kSourceStops, gateInvStops = 1.0f / kSourceStops;
 
     // Up chain: U_n = w_n L_n; U_i = w_i L_i + tent_up(U_i+1).
     Image up = levels[built - 1];
@@ -417,45 +670,148 @@ void scatterP010(AHardwareBuffer *ahb, const SoftFilter &filter, Transfer tr, Yu
         up = std::move(next);
     }
     levels.clear();
+    const auto t3 = std::chrono::steady_clock::now();
 
     // Composite and write back the change of each pixel's encoded RGB, chroma per 2x2 block.
+    // The tent kernel is separable, so it runs in two passes over bands of output rows: a
+    // horizontal pass over the coarse level reads sequentially, and the vertical pass reads a
+    // strip small enough to sit in cache. Level 0 is half precision, so the encode of the
+    // original pixel is precomputed for every fp16 bit pattern — a table walk instead of a log2.
     std::atomic<int64_t> changed{0};
-    parallelRows(img.h / 2, [&](int by) {
-        for (int bx = 0; bx < img.w / 2; bx++) {
-            float dU = 0, dV = 0;
-            for (int j = 0; j < 2; j++)
-                for (int i = 0; i < 2; i++) {
-                    int x = 2 * bx + i, y = 2 * by + j;
-                    float e[3];
-                    l0.get(x, y, e);
-                    float t[3];
-                    tentAt(up, x, y, t);
-                    float acc[3], d[3];
-                    float k = 1.0f;
-                    if (gain > 1.0f) {
-                        float m[3];
-                        levelAt(gate, gateLevel, x, y, m);
-                        k = coreGain(std::max(m[0], std::max(m[1], m[2])), log2Top, gain);
-                    }
-                    for (int c = 0; c < 3; c++) acc[c] = ((lw.core[c] + lw.w[c][0]) * k * e[c] + t[c]) / lw.transmission[c];
-                    shoulder(acc, topOf(tr));
-                    for (int c = 0; c < 3; c++) d[c] = encode(acc[c], tr) - encode(e[c], tr);
-                    float dy, du, dv;
-                    rgbToYuvDelta(d, coding, dy, du, dv);
-                    uint16_t *py = img.y(x, y);
-                    if (std::fabs(dy) >= 0.5f) changed.fetch_add(1, std::memory_order_relaxed);
-                    *py = unitToCode(codeToUnit(*py, coding) + dy, coding);
-                    dU += du * 0.25f;
-                    dV += dv * 0.25f;
-                }
-            uint16_t *pu = img.u(bx, by), *pv = img.v(bx, by);
-            *pu = unitToCode(codeToUnit(*pu, coding) + dU, coding);
-            *pv = unitToCode(codeToUnit(*pv, coding) + dV, coding);
+    std::vector<float> encLut(65536);
+    for (int i = 0; i < 65536; i++) {
+        __fp16 h;
+        std::memcpy(&h, &i, sizeof h);
+        encLut[i] = encode(float(h), tr);
+    }
+    const int bandRows = 64;  // output rows per band, even so the 2x2 blocks stay aligned
+    parallelRows((img.h + bandRows - 1) / bandRows, [&](int band) {
+        const int y0 = band * bandRows, y1 = std::min(y0 + bandRows, img.h);
+        // Coarse rows the band's vertical taps touch: even y reads m-2..m+1, odd y m-1..m+2, and
+        // the strip stores them pre-reflected, so an out-of-range index is still a valid slot.
+        const int sy0 = (y0 >> 1) - 2, sy1 = ((y1 - 1) >> 1) + 3;
+        static thread_local std::vector<float> strip;
+        strip.resize(size_t(sy1 - sy0) * img.w * 3);
+        for (int sy = sy0; sy < sy1; sy++) {
+            const int ry = reflect(sy, up.h);
+            float *out = &strip[size_t(sy - sy0) * img.w * 3];
+            for (int x = 0; x < img.w; x++) {
+                const int bx = (x >> 1) - ((x & 1) ? 1 : 2);
+                const float *wx = (x & 1) ? kTentOdd : kTentEven;
+                const float *v0 = up.at(reflect(bx, up.w), ry);
+                const float *v1 = up.at(reflect(bx + 1, up.w), ry);
+                const float *v2 = up.at(reflect(bx + 2, up.w), ry);
+                const float *v3 = up.at(reflect(bx + 3, up.w), ry);
+                for (int c = 0; c < 3; c++) out[c] = wx[0] * v0[c] + wx[1] * v1[c] + wx[2] * v2[c] + wx[3] * v3[c];
+                out += 3;
+            }
         }
+        const size_t stride = size_t(img.w) * 3;
+        int64_t bandChanged = 0;  // counted locally: a shared atomic per pixel does not scale
+        for (int by = y0 / 2; by < y1 / 2; by++) {
+            for (int bx = 0; bx < img.w / 2; bx++) {
+                float dU = 0, dV = 0;
+                for (int j = 0; j < 2; j++)
+                    for (int i = 0; i < 2; i++) {
+                        int x = 2 * bx + i, y = 2 * by + j;
+                        float e[3];
+                        l0.get(x, y, e);
+                        const __fp16 *pe = l0.at(x, y);
+                        const int ty = (y >> 1) - ((y & 1) ? 1 : 2);
+                        const float *wy = (y & 1) ? kTentOdd : kTentEven;
+                        const float *r0 = strip.data() + size_t(ty - sy0) * stride + size_t(x) * 3;
+                        const float *r1 = r0 + stride, *r2 = r0 + 2 * stride, *r3 = r0 + 3 * stride;
+                        float t[3];
+                        for (int c = 0; c < 3; c++)
+                            t[c] = wy[0] * r0[c] + wy[1] * r1[c] + wy[2] * r2[c] + wy[3] * r3[c];
+                        float acc[3], d[3];
+                        float k = 1.0f;
+                        if (gain > 1.0f) {
+                            float m[3];
+                            levelAt(gate, gateLevel, x, y, m);
+                            k = coreGain(std::max(m[0], std::max(m[1], m[2])), gateFloor, gateCeil, gateLog2TopMinusStops,
+                                         gateInvStops, gain);
+                            k = 1.0f + lw.strength * (k - 1.0f);
+                        }
+                        for (int c = 0; c < 3; c++) acc[c] = ((lw.core[c] + lw.w[c][0]) * k * e[c] + t[c]) / lw.transmission[c];
+                        shoulder(acc, topOf(tr));
+                        for (int c = 0; c < 3; c++) {
+                            uint16_t bits;
+                            std::memcpy(&bits, pe + c, sizeof bits);
+                            d[c] = encode(acc[c], tr) - encLut[bits];
+                        }
+                        float dy, du, dv;
+                        rgbToYuvDelta(d, coding, dy, du, dv);
+                        uint16_t *py = img.y(x, y);
+                        if (std::fabs(dy) >= 0.5f) bandChanged++;
+                        *py = unitToCode(codeToUnit(*py, coding) + dy, coding);
+                        dU += du * 0.25f;
+                        dV += dv * 0.25f;
+                    }
+                uint16_t *pu = img.u(bx, by), *pv = img.v(bx, by);
+                *pu = unitToCode(codeToUnit(*pu, coding) + dU, coding);
+                *pv = unitToCode(codeToUnit(*pv, coding) + dV, coding);
+            }
+        }
+        changed.fetch_add(bandChanged, std::memory_order_relaxed);
     });
-    AHardwareBuffer_unlock(ahb, nullptr);
+    const auto t4 = std::chrono::steady_clock::now();
+    auto ms = [](std::chrono::steady_clock::time_point a, std::chrono::steady_clock::time_point b) {
+        return std::chrono::duration_cast<std::chrono::milliseconds>(b - a).count();
+    };
+    __android_log_print(ANDROID_LOG_INFO, TAG, "stages: l0 %lld ms, pyramid %lld ms, up %lld ms, composite %lld ms",
+                        (long long)ms(t0, t1), (long long)ms(t1, t2), (long long)ms(t2, t3), (long long)ms(t3, t4));
     __android_log_print(ANDROID_LOG_INFO, TAG, "capture: %s P010, %d levels, %.1f%% of pixels changed", coding.msb ? "MSB" : "LSB",
                         built, 100.0 * double(changed.load()) / (double(img.w) * img.h));
+}
+
+// SMsHardwareBufferInfo path: lock, scatter, unlock.
+void scatterP010(AHardwareBuffer *ahb, const SoftFilter &filter, Transfer tr, YuvCoding coding) {
+    AHardwareBuffer_Desc desc{};
+    AHardwareBuffer_describe(ahb, &desc);
+    P010 img;
+    img.w = int(desc.width) & ~1;
+    img.h = int(desc.height) & ~1;
+    // API 29; the module's minimum is 28.
+    using LockPlanes = int (*)(AHardwareBuffer *, uint64_t, int32_t, const ARect *, AHardwareBuffer_Planes *);
+    static auto lockPlanes = reinterpret_cast<LockPlanes>(dlsym(RTLD_DEFAULT, "AHardwareBuffer_lockPlanes"));
+    if (!lockPlanes ||
+        lockPlanes(ahb, AHARDWAREBUFFER_USAGE_CPU_READ_OFTEN | AHARDWAREBUFFER_USAGE_CPU_WRITE_OFTEN, -1, nullptr, &img.planes) != 0 ||
+        img.planes.planeCount < 3) {
+        __android_log_print(ANDROID_LOG_ERROR, TAG, "capture: P010 buffer not lockable (format 0x%x)", desc.format);
+        return;
+    }
+    scatterLockedP010(img, filter, tr, coding);
+    AHardwareBuffer_unlock(ahb, nullptr);
+}
+
+// SMsHostBufferInfo path: the planes are already plain CPU memory, so the descriptors are built
+// by hand. P010 is semi-planar: Y, then one interleaved plane with 4 bytes per chroma pair.
+bool scatterHostBuffer(const HostBufferInfo &b, const SoftFilter &filter, Transfer tr, YuvCoding coding) {
+    const int w = int(b.width) & ~1, h = int(b.height) & ~1;
+    // The offsets above are read out of a disassembly, so refuse anything that does not look like
+    // an image rather than write outside the planes when one of them is wrong.
+    if (!b.plane[0] || !b.plane[1] || w < 64 || h < 64 || w > 8192 || h > 8192 ||
+        b.stride[0] < uint32_t(w) * 2 || b.stride[1] < uint32_t(w) * 2) {
+        __android_log_print(ANDROID_LOG_ERROR, TAG, "capture: host buffer rejected %p/%p %ux%u stride %u/%u",
+                            b.plane[0], b.plane[1], b.width, b.height, b.stride[0], b.stride[1]);
+        return false;
+    }
+    P010 img;
+    img.w = w;
+    img.h = h;
+    img.planes.planeCount = 3;
+    img.planes.planes[0].data = b.plane[0];
+    img.planes.planes[0].rowStride = b.stride[0];
+    img.planes.planes[0].pixelStride = 2;
+    img.planes.planes[1].data = b.plane[1];
+    img.planes.planes[1].rowStride = b.stride[1];
+    img.planes.planes[1].pixelStride = 4;
+    img.planes.planes[2].data = static_cast<uint8_t *>(b.plane[1]) + 2;
+    img.planes.planes[2].rowStride = b.stride[1];
+    img.planes.planes[2].pixelStride = 4;
+    scatterLockedP010(img, filter, tr, coding);
+    return true;
 }
 
 // ---- preview: the same passes in Meishe's GL context -----------------------------------------
@@ -829,7 +1185,9 @@ void scatterTexture(GLuint outTex, int w, int h, const SoftFilter &filter, Trans
     int gateLevel = sourceLevel(filter, std::hypot(float(w), float(h)), built);
     glUniform1i(glGetUniformLocation(p.composite, "uGate"), 3);
     glUniform2f(glGetUniformLocation(p.composite, "uFullTexel"), 1.0f / w, 1.0f / h);
-    glUniform3f(glGetUniformLocation(p.composite, "uSource"), std::log2(topOf(tr)), kSourceStops, gain);
+    // The strength thins the core boost out with the rest of the filter.
+    glUniform3f(glGetUniformLocation(p.composite, "uSource"), std::log2(topOf(tr)), kSourceStops,
+                1.0f + lw.strength * (gain - 1.0f));
     bindTex(3, p.levels[gateLevel - 1].tex);
     bindTex(0, p.l0.tex);
     bindTex(1, p.ups[0].tex);
@@ -861,6 +1219,8 @@ using RenderHdrTexture = int (*)(void *, void *, const GpuTextureInfo *, unsigne
 RenderHdrTexture origHdrTexture;
 int hookHdrTexture(void *core, void *effect, const GpuTextureInfo *in, unsigned n, GpuTextureInfo *out, const void *param,
                    const void *metadata, int flags) {
+    probeRender("hdrTexture", param);
+    if (out) logPass("tex", out->width, out->height, out->format, out->transfer, 0, 0, param);
     const SoftFilter *filter = filterFor(param);
     Transfer tr;
     if (!filter || !out || !transferOf(out->transfer, tr)) return origHdrTexture(core, effect, in, n, out, param, metadata, flags);
@@ -878,23 +1238,73 @@ using RenderHardwareBuffer = int (*)(void *, void *, const HardwareBufferInfo *,
 RenderHardwareBuffer origHardwareBuffer;
 int hookHardwareBuffer(void *core, void *effect, const HardwareBufferInfo *in, unsigned n, const HardwareBufferInfo *out,
                        const void *param, const void *metadata, int flags) {
+    probeRender("hardwareBuffer", param);
+    if (out && out->buffer) {
+        AHardwareBuffer_Desc desc{};
+        AHardwareBuffer_describe(out->buffer, &desc);
+        logPass("hw", desc.width, desc.height, uint32_t(desc.format), uint32_t(out->transfer), 0, 0, param);
+    }
     const SoftFilter *filter = filterFor(param);
     Transfer tr;
     if (!filter || !out || !out->buffer || !transferOf(uint32_t(out->transfer), tr)) {
         return origHardwareBuffer(core, effect, in, n, out, param, metadata, flags);
     }
     int ret;
-    {
+    if (keepStock()) {
+        ret = origHardwareBuffer(core, effect, in, n, out, param, metadata, flags);
+    } else {
         StockSoftOff off(param);
         ret = origHardwareBuffer(core, effect, in, n, out, param, metadata, flags);
     }
-    if (ret & 1) {
-        AHardwareBuffer_Desc desc{};
-        AHardwareBuffer_describe(out->buffer, &desc);
-        __android_log_print(ANDROID_LOG_INFO, TAG, "capture %ux%u %s, focal %.0f mm", desc.width, desc.height,
-                            filter == &kHdf ? "HDF" : filter == &kBlackMist ? "black mist" : "white mist", double(gFocalMm.load()));
-        auto start = std::chrono::steady_clock::now();
-        scatterP010(out->buffer, *filter, tr, yuvCoding(out->matrix, out->range));
+    if (!(ret & 1)) return ret;
+    if (sameFrameAgain(0, 0, out->buffer)) {
+        __android_log_print(ANDROID_LOG_WARN, TAG, "capture: hardware buffer scattered already, skipping");
+        return ret;
+    }
+    AHardwareBuffer_Desc desc{};
+    AHardwareBuffer_describe(out->buffer, &desc);
+    __android_log_print(ANDROID_LOG_INFO, TAG, "capture %ux%u %s at %d%%%s, focal %.0f mm", desc.width, desc.height,
+                        filter == &kHdf ? "HDF" : filter == &kBlackMist ? "black mist" : "white mist", strengthNow(),
+                        keepStock() ? " keep" : "", double(gFocalMm.load()));
+    auto start = std::chrono::steady_clock::now();
+    scatterP010(out->buffer, *filter, tr, yuvCoding(out->matrix, out->range));
+    __android_log_print(ANDROID_LOG_INFO, TAG, "capture took %lld ms", (long long)std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::steady_clock::now() - start).count());
+    return ret;
+}
+
+// The capture on this device: MsRenderHDRHostBuffer, called once per shot right after the
+// shutter, with the stock soft light still switched on in the parameter block.
+int hookRenderHdrHostBuffer(void *core, void *effect, const HostBufferInfo *in, unsigned n, HostBufferInfo *out,
+                            void *param, void *metadata, int flags) {
+    if (!origRenderHdrHostBuffer) return 0;
+    if (!out) return origRenderHdrHostBuffer(core, effect, in, n, out, param, metadata, flags);
+    logPass("host", out->width, out->height, out->pixFmt, out->transfer, out->stride[0], out->stride[1], param);
+    const SoftFilter *filter = filterFor(param);
+    Transfer tr;
+    if (!filter || !transferOf(out->transfer, tr)) {
+        return origRenderHdrHostBuffer(core, effect, in, n, out, param, metadata, flags);
+    }
+    int ret;
+    if (keepStock()) {
+        ret = origRenderHdrHostBuffer(core, effect, in, n, out, param, metadata, flags);
+    } else {
+        StockSoftOff off(param);
+        ret = origRenderHdrHostBuffer(core, effect, in, n, out, param, metadata, flags);
+    }
+    if (!(ret & 1)) return ret;
+    if (sameFrameAgain(out->width, out->height, out->plane[0])) {
+        __android_log_print(ANDROID_LOG_WARN, TAG, "capture: %ux%u scattered already, skipping", out->width, out->height);
+        return ret;
+    }
+    __android_log_print(ANDROID_LOG_INFO, TAG,
+                        "capture %ux%u in %p out %p stride %u/%u transfer %u matrix %u range %u fmt %u %s at %d%%%s, focal %.0f mm",
+                        out->width, out->height, in ? in->plane[0] : nullptr, out->plane[0], out->stride[0], out->stride[1],
+                        out->transfer, out->matrix, out->range, out->pixFmt,
+                        filter == &kHdf ? "HDF" : filter == &kBlackMist ? "black mist" : "white mist", strengthNow(),
+                        keepStock() ? " keep" : "", double(gFocalMm.load()));
+    auto start = std::chrono::steady_clock::now();
+    if (scatterHostBuffer(*out, *filter, tr, yuvCoding(out->matrix, out->range))) {
         __android_log_print(ANDROID_LOG_INFO, TAG, "capture took %lld ms", (long long)std::chrono::duration_cast<std::chrono::milliseconds>(
                                 std::chrono::steady_clock::now() - start).count());
     }
@@ -912,6 +1322,23 @@ void onLibraryLoadedForSoftLight(HookFunction hook, const char *name, void *hand
                reinterpret_cast<void **>(&origHdrTexture), TAG);
     hookExport(hook, handle, "MsRenderHardwareBuffer", reinterpret_cast<void *>(hookHardwareBuffer),
                reinterpret_cast<void **>(&origHardwareBuffer), TAG);
+    hookExport(hook, handle, "MsSetEffectIntValue", reinterpret_cast<void *>(hookSetInt),
+               reinterpret_cast<void **>(&origSetInt), TAG);
+    hookExport(hook, handle, "MsSetEffectBooleanValue", reinterpret_cast<void *>(hookSetBool),
+               reinterpret_cast<void **>(&origSetBool), TAG);
+    // Pass-through probes for the entries nothing is replaced in: the capture usually comes
+    // through one of these, and without them a silent hook looks the same as a missing one.
+    hookExport(hook, handle, "MsRender", reinterpret_cast<void *>(hookRender),
+               reinterpret_cast<void **>(&origRender), TAG);
+    hookExport(hook, handle, "MsRenderHostBuffer", reinterpret_cast<void *>(hookRenderHostBuffer),
+               reinterpret_cast<void **>(&origRenderHostBuffer), TAG);
+    hookExport(hook, handle, "MsRenderHDRHostBuffer", reinterpret_cast<void *>(hookRenderHdrHostBuffer),
+               reinterpret_cast<void **>(&origRenderHdrHostBuffer), TAG);
+    hookExport(hook, handle, "MsRenderTexture", reinterpret_cast<void *>(hookRenderTexture),
+               reinterpret_cast<void **>(&origRenderTexture), TAG);
+    hookExport(hook, handle, "MsRenderTextureWithPosition", reinterpret_cast<void *>(hookRenderTextureWithPosition),
+               reinterpret_cast<void **>(&origRenderTextureWithPosition), TAG);
+    __android_log_print(ANDROID_LOG_INFO, TAG, "render entries probed");
 }
 
 extern "C" JNIEXPORT void JNICALL Java_local_jiege_hook_softlight_SoftLight_nativeSetFocal(JNIEnv *, jclass, jfloat millimetres) {
@@ -923,5 +1350,8 @@ extern "C" JNIEXPORT void JNICALL Java_local_jiege_hook_softlight_SoftLight_nati
 extern "C" JNIEXPORT void JNICALL Java_local_jiege_hook_softlight_SoftLight_nativeSetLevels(JNIEnv *, jclass, jboolean weak,
                                                                                            jboolean medium, jboolean strong) {
     // ProMist types: weak (柔美) 1, medium (朦胧) 0, strong (梦幻) 2.
-    gLevels.store((weak ? 1 << 1 : 0) | (medium ? 1 << 0 : 0) | (strong ? 1 << 2 : 0));
+    int levels = (weak ? 1 << 1 : 0) | (medium ? 1 << 0 : 0) | (strong ? 1 << 2 : 0);
+    if (gLevels.exchange(levels) != levels) {
+        __android_log_print(ANDROID_LOG_INFO, TAG, "replaced levels %x", levels);
+    }
 }
