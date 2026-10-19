@@ -50,6 +50,16 @@ public final class HighPixelFilters {
 
     /** Filters the mode could not be given a presenter for. */
     private static volatile Object presenter;
+    /**
+     * The most recently constructed filter presenter, whatever mode it serves. The camera builds one
+     * filter presenter per process and re-points it at the mode on screen by calling
+     * {@code FeaturePresenter.R(cameraId, modeName)} when it enters a mode that has the filter feature.
+     * 哈苏超清 gets the feature only through this module, so that re-point is never made for it; when the
+     * mode is entered by switching (not a cold start into it) the presenter is still bound to the mode it
+     * was built for (retroCamera, common, ...), and this module saw no presenter for highPixel. Keeping
+     * the last instance lets {@link #ensurePresenter} re-point it to highPixel itself.
+     */
+    private static volatile Object lastPresenter;
     private static volatile List<String> types = Collections.emptyList();
     private static volatile int current = -1;
     private static volatile long lastPickAt;
@@ -184,12 +194,53 @@ public final class HighPixelFilters {
         try {
             mode = String.valueOf(symbols.get("FeaturePresenter.modeName", instance));
         } catch (Throwable error) {
+            if (seen.add("adoptFail")) Log.i(TAG, "adopt: modeName unreadable: " + error);
             return false;
         }
-        if (!MODE.equals(mode)) return false;
+        lastPresenter = instance;
+        if (!MODE.equals(mode)) {
+            // Diagnostic for the missing-row regression: tell every non-highPixel presenter apart
+            // (and whether the mode name is ever null here) so a silently-dropped highPixel
+            // presenter is not mistaken for "the camera never built one".
+            if (seen.add("adopt:" + mode)) Log.i(TAG, "adopt: presenter is mode \"" + mode + "\", not highPixel");
+            return false;
+        }
         presenter = instance;
         read(symbols);
         return true;
+    }
+
+    /**
+     * Re-points the camera's own filter presenter at 哈苏超清 when the mode has none. The camera builds
+     * one filter presenter per process and normally re-points it with
+     * {@code FeaturePresenter.R(cameraId, modeName)} on mode switch, but 哈苏超清 has no filter feature in
+     * the camera's own feature graph, so the re-point is never made and the presenter stays bound to the
+     * mode it was built for. Called when the mode is up and {@link #presenter} is still null: it reuses the
+     * presenter built for another mode, switches its modeName/cameraId to highPixel, and re-reads its list.
+     *
+     * @return true when the presenter is now available for the mode.
+     */
+    public static synchronized boolean ensurePresenter() {
+        if (presenter != null) return true;
+        Object instance = lastPresenter;
+        if (instance == null) return false;
+        Symbols symbols = Symbols.get();
+        try {
+            // FeaturePresenter.R(int cameraId, String modeName) is the camera's own re-point method
+            // (lc.w.R); cameraId is replayed from the instance's own field so the derived config stays
+            // the one the camera chose for it.
+            int cameraId = XposedHelpers.getIntField(instance, "m");
+            XposedHelpers.callMethod(instance, "R", Integer.valueOf(cameraId), MODE);
+            if (seen.add("repoint")) {
+                Log.i(TAG, "presenter re-pointed to highPixel (cameraId " + cameraId + ")");
+            }
+        } catch (Throwable error) {
+            if (seen.add("repointFail")) {
+                Log.i(TAG, "presenter re-point failed: " + error);
+            }
+            return false;
+        }
+        return adopt(symbols, instance);
     }
 
     /** The mode's filter types and their names, as the presenter has them. */
@@ -615,6 +666,7 @@ public final class HighPixelFilters {
      * mode has no presenter, so nothing is drawn over a page that could not apply a pick.
      */
     public static View bar(Activity activity, Runnable onPicked) {
+        if (presenter == null) ensurePresenter();
         if (presenter != null) read(Symbols.get());
         if (!available() || !Settings.get(ModuleSettings.HIGH_PIXEL_EFFECTS)) return null;
         List<String> list = types;

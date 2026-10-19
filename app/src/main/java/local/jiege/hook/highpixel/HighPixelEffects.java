@@ -347,6 +347,11 @@ public final class HighPixelEffects {
                 }
                 if (!"highPixel".equals(name)) return;
                 entrySetup = owner;
+                // The mode has no filter presenter of its own when it is entered by switching (the
+                // camera never re-points the shared filter presenter at 哈苏超清, since the mode has no
+                // filter feature in its own graph). Re-point the presenter built for another mode here,
+                // before the filter row is first read, so the row is not left out.
+                HighPixelFilters.ensurePresenter();
                 if (reportedModes.add("switch:" + name)) {
                     new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(
                         HighPixelEffects::replaySetup, 700);
