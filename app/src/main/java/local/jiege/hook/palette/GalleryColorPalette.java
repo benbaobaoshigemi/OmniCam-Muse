@@ -31,6 +31,8 @@ public final class GalleryColorPalette {
     private static final String SDK_JAR = "com.oplus.camera.unit.sdk.jar";
     private static final String STAGED_SDK = "/data/user/0/com.coloros.gallery3d/files/jiege_ipu/" + SDK_JAR;
     private static final String LIBRARY_PATH = "/product/lib64:/system/lib64";
+    /** Last tone/sat fallback diagnostic, so a drag does not spam one log line per frame. */
+    private static String lastRestyleDiag;
 
     private GalleryColorPalette() {}
 
@@ -137,6 +139,13 @@ public final class GalleryColorPalette {
      * already toned at capture), and the filter stage runs for any style except the one the photo
      * was captured with (already baked in, see GalleryPaletteScope.capturedFilter). The result is
      * the stock filter editor's rendering path, which does work here.
+     *
+     * The panel's tone/saturation sliders live in the bypassed native stage, so they would do
+     * nothing. The gallery sends them as process values (palette_tone / palette_saturation,
+     * both -100..100, saturation 100 meaning a 2.0 multiplier — ColorPaletteParameter reads them
+     * from the "tone"/"filter_saturation" editor keys and x8v.k forwards them per request); the
+     * replacement reads them off the request entity and applies a Java equivalent onto the copy:
+     * tone as a gamma curve (positive brightens the midtones), saturation as a luminance mix.
      */
     private static void restyleDirectly(ClassLoader sdkLoader) {
         String unit = "com.oplus.ocs.camera.ipusdk.processunit.palette.PaletteProcessUnitSDK";
@@ -148,6 +157,17 @@ public final class GalleryColorPalette {
                     @Override protected Object replaceHookedMethod(MethodHookParam param) {
                         android.graphics.Bitmap input = (android.graphics.Bitmap) param.args[1];
                         if (input == null) return null;  // the caller turns this into failProcess
+                        int[] panel = panelValues(sdkLoader, param.thisObject);
+                        android.graphics.Bitmap restyled = panel == null ? null : toneSaturation(input, panel[0], panel[1]);
+                        if (restyled == null && panel != null && (panel[0] != 0 || panel[1] != 0)) {
+                            String diag = "tone/sat not applied: tone=" + panel[0] + " sat=" + panel[1]
+                                + " config=" + input.getConfig() + " colorspace=" + input.getColorSpace();
+                            if (!diag.equals(lastRestyleDiag)) {
+                                lastRestyleDiag = diag;  // once per distinct situation, not per drag frame
+                                Log.i(TAG, diag);
+                            }
+                        }
+                        if (restyled != null) return restyled;
                         try {
                             return input.copy(input.getConfig(), false);
                         } catch (Throwable error) {
@@ -190,5 +210,116 @@ public final class GalleryColorPalette {
             Log.e(TAG, "needsFilterStage reflection failed", error);
             return Boolean.FALSE;
         }
+    }
+
+    /** The panel sliders of the request being processed: {tone, saturation}, both -100..100. */
+    private static int[] panelValues(ClassLoader sdkLoader, Object unit) {
+        try {
+            Object entity = XposedHelpers.getObjectField(unit, "mRequestEntities");
+            Class<?> keys = XposedHelpers.findClass(
+                "com.oplus.ocs.camera.ipusdk.processunit.palette.key.PaletteProcessKeySDK", sdkLoader);
+            return new int[] {
+                intValue(XposedHelpers.callMethod(entity, "getProcessValue",
+                    XposedHelpers.getStaticObjectField(keys, "PALETTE_TONE"))),
+                intValue(XposedHelpers.callMethod(entity, "getProcessValue",
+                    XposedHelpers.getStaticObjectField(keys, "PALETTE_SATURATION"))),
+            };
+        } catch (Throwable error) {
+            return null;  // keys or entity unavailable: keep the identity bypass
+        }
+    }
+
+    private static int intValue(Object value) {
+        return value instanceof Integer ? (Integer) value : 0;
+    }
+
+    /**
+     * The Java stand-in for the bypassed BasicTone: tone as a gamma curve over 0..255 (positive
+     * brightens the midtones, 2^(-tone/100)), saturation as a mix towards/away from luminance
+     * (100 = 2.0x, -100 = grayscale). The editor's input bitmap is typically RGBA_F16 in an
+     * extended scRGB color space, so the pixel pass runs on an sRGB/8888 flatten and the result
+     * is drawn back into the input's config and color space (values beyond 0..1 clamp — the
+     * panel is SDR-only here). Returns null when the values are neutral or the bitmap cannot be
+     * processed this way; the caller then falls back to the plain identity copy.
+     */
+    private static android.graphics.Bitmap toneSaturation(android.graphics.Bitmap input, int tone, int saturation) {
+        if (tone == 0 && saturation == 0) return null;
+        android.graphics.Bitmap.Config config = input.getConfig();
+        if (config != android.graphics.Bitmap.Config.ARGB_8888
+                && config != android.graphics.Bitmap.Config.RGBA_F16
+                && config != android.graphics.Bitmap.Config.RGBA_1010102) return null;
+        int w = input.getWidth(), h = input.getHeight();
+        if (w <= 0 || h <= 0) return null;
+        android.graphics.Bitmap flat;
+        try {
+            if (config == android.graphics.Bitmap.Config.ARGB_8888) {
+                flat = input.copy(android.graphics.Bitmap.Config.ARGB_8888, true);
+            } else {
+                flat = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888);
+                new android.graphics.Canvas(flat).drawBitmap(input, 0f, 0f,
+                    new android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG));
+            }
+        } catch (Throwable error) {
+            Log.i(TAG, "tone/sat flatten failed: " + error);
+            return null;
+        }
+        try {
+            int[] toneLut = new int[256];
+            double gamma = Math.pow(2.0, -tone / 100.0);
+            for (int i = 0; i < 256; i++) {
+                toneLut[i] = (int) Math.round(255.0 * Math.pow(i / 255.0, gamma));
+            }
+            float satMul = Math.max(0f, 1f + saturation / 100f);
+            int rowsPerStrip = Math.max(1, 4 * 1024 * 1024 / w);  // ~16MB pixel strips, at least one row
+            int[] pixels = new int[w * rowsPerStrip];
+            for (int top = 0; top < h; ) {
+                int rows = Math.min(h - top, rowsPerStrip);
+                flat.getPixels(pixels, 0, w, 0, top, w, rows);
+                for (int i = 0, count = w * rows; i < count; i++) {
+                    int p = pixels[i];
+                    int r = toneLut[(p >> 16) & 0xFF];
+                    int g = toneLut[(p >> 8) & 0xFF];
+                    int b = toneLut[p & 0xFF];
+                    float luma = 0.299f * r + 0.587f * g + 0.114f * b;
+                    pixels[i] = (p & 0xFF000000)
+                        | (channel(luma, r, satMul) << 16)
+                        | (channel(luma, g, satMul) << 8)
+                        | channel(luma, b, satMul);
+                }
+                flat.setPixels(pixels, 0, w, 0, top, w, rows);
+                top += rows;
+            }
+        } catch (Throwable error) {
+            flat.recycle();
+            Log.i(TAG, "tone/sat pixel pass failed: " + error);
+            return null;
+        }
+        if (config == android.graphics.Bitmap.Config.ARGB_8888) {
+            if (android.os.Build.VERSION.SDK_INT >= 34) {  // keep an Ultra HDR gainmap if any
+                try {
+                    android.graphics.Gainmap gainmap = input.getGainmap();
+                    if (gainmap != null && flat.getGainmap() == null) flat.setGainmap(gainmap);
+                } catch (Throwable ignored) {
+                    // gainmaps are optional extras
+                }
+            }
+            return flat;
+        }
+        try {  // back into the pipeline's own config + color space
+            android.graphics.Bitmap out = android.graphics.Bitmap.createBitmap(w, h, config, true, input.getColorSpace());
+            new android.graphics.Canvas(out).drawBitmap(flat, 0f, 0f,
+                new android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG));
+            flat.recycle();
+            return out;
+        } catch (Throwable error) {
+            flat.recycle();
+            Log.i(TAG, "tone/sat re-encode failed: " + error);
+            return null;
+        }
+    }
+
+    private static int channel(float luma, int value, float satMul) {
+        float c = luma + (value - luma) * satMul;
+        return c <= 0f ? 0 : c >= 255f ? 255 : (int) c;
     }
 }
