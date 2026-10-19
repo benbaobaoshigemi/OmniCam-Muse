@@ -4,13 +4,18 @@ Find X9 Ultra（PMA110，相机 7.006.103）上各项功能的原理与涉及文
 
 ## 相册调色盘
 
-相册（17.10.7）的“色彩风格”页（风格列表、调色盘面板、按照片 `filter.info` 还原相机的滤镜与调色盘）有三处：
+相册（17.10.7）的“色彩风格”页（风格列表、调色盘面板、按照片 `filter.info` 换风格）有四处：
 
 1. 开关 `feature_is_support_color_palette` 要求 `ro.product.first_api_level >= 37`，本机是 36，其余条件（相机 `com.oplus.feature.color.palette.support`、IPU 调色盘、Find 系列、工程保存）都满足。钩子 `palette/GalleryColorPalette` 只把这一个开关答为真。
 2. 调色盘模式经 `CombineLutProcessUnitSDK`、`PaletteColorTable` 出图，本机系统的 `com.oplus.camera.unit.sdk.jar` 没有这两个类，所有风格都渲染失败。`payload/ipu/` 是 X10（PMW110 A.50）的同名 jar，`service.sh` 放到相册 `files/jiege_ipu`（root 只读，SELinux 类别取目录的），钩子用 `ClassLoaderFactory` 以共享命名空间（库路径 `/product/lib64:/system/lib64`）建加载器，替换相册的该共享库加载器。两机的 JNI 库（`libCombineLutJni` 等）相同。jar 不可读时开关也不打开。
-3. 出图路径：相册给 SDK 的是 GL 纹理；X10 SDK 的纹理直送分支（APS 纹理入口，`processImages`）本机没有，钩子让 `isTextureRequest` 为假，SDK 改走 GL 流水线，在 GPU 上转成 P010 后交给 `ipuColorPaletteProcess`（本机相册输入即 P010，`HBV16 for gallery P010`），再由 `libBasicTonePhoto.so` 路由到 X10 后端（相册传 CamMode 6）。调色表来自 `payload/x10_basictone/palette`。
+3. 出图路径：相册给 SDK 的是 GL 纹理；X10 SDK 的纹理直送分支（APS 纹理入口，`processImages`）本机没有，钩子让 `isTextureRequest` 为假，SDK 改走 GL 流水线，在 GPU 上转成 P010 后交给 `ipuColorPaletteProcess`（本机相册输入即 P010，`HBV16 for gallery P010`），再由 `libBasicTonePhoto.so` 路由到 X10 后端（相册传 CamMode 6）。调色表来自 `payload/x10_basictone/palette`。SDK 的 GL 桥（`PaletteGlTextureBridge`）会自建 EGL context 并切走线程的 current context 且不恢复，编辑器随后在错误 context 里渲染（`glUseProgram` GL_INVALID_VALUE）预览全黑；`processImage` 钩子在调用前把线程当时的 display/draw/read/context 存下来（并经 `setShareGlContext` 交给 SDK），调用后恢复回去。
+4. 换风格的链路（X8U 缺陷与旁路）：palette 管线本应从照片的 `src.image` 元数据重渲——`runBasicToneStage`（native transact 4100）跑基础影调、`shouldRunFilterStage` 决定是否跑滤镜阶段。但 X8U 成片的 `src.image` 是普通 JPEG（X10 用私有格式并带 `basictone.info`/`master.mode.preset.info` 元数据块），`libAlgoInterface.so` 的 `filterProcessMeisheV2` 报 `resolvePaletteSrcOrientation invalid metaIndex=0`，BasicTone 输出彩噪；相册侧 `buildPaletteProcessParameter` 又硬编码滤镜阶段关闭（`sdv$a.k=false`），非标准风格只剩坏掉的 BasicTone、滤镜被跳过——即“全部糊”。修复（`restyleDirectly`）：`runBasicToneStage` 恒等旁路（返回输入 bitmap 的 copy——每张成片在拍照时已完成调色，无需重渲）；`shouldRunFilterStage` 重写为原判定 `needsFilterStage(entity)`（风格非 default 且强度>0）再排除照片自带滤镜。滤镜阶段因此直接叠加在显示图上，走的是本机可用的渲染路径。
 
-相册的滤镜列表来自同一个 SDK 的 `FilterGroupManager`：`GalleryFilters` 在它初始化后把目录里默认开启的模块滤镜追加到普通组和大师组末尾（名称用目录标题，原厂序号不变）；导入滤镜在相机私有目录、相册读不到，不列出；LUT 不在 `/odm/etc/camera/meishe_lut`、`filters_lut` 的也不列出。
+入口统一（`palette/GalleryPaletteScope`）：相册的 palette 模式是整个 App 一次性的懒值（`isColorPaletteMode`），照片编辑器再用它决定给“色彩风格”还是原厂“滤镜”入口。钩子把懒值代理为恒真，所有照片都有“色彩风格”入口（旧版按 `filter.info` 版本号+isPalette 拆分，不带调色盘的照片落到原厂滤镜页，模块的大师风格在那里不可见）。编辑器 `onCreate` 时经 `FileExtendedContainer.getExtensionData("filter.info")`（容器块在磁盘上加密，这是唯一读真实值的途径）解析 +28 处 NUL 结尾的拍摄滤镜 LUT 名（如 `hu_po.bin`，+24 是标志位）存入 `capturedFilter`，供第 4 点排除自带滤镜、避免双重应用。`dumpExtensions` 每次打开编辑器记录各扩展块长度与 filter.info 前 216 字节 hex，用于诊断。
+
+相册的滤镜列表来自同一个 SDK 的 `FilterGroupManager`：`GalleryFilters` 在它初始化后把目录里默认开启的模块滤镜追加到普通组和大师组末尾（名称用目录标题，原厂序号不变；已在组里的跳过，每作用域一行 added/disabled/alreadyPresent/noLut 计数日志）；导入滤镜在相机私有目录、相册读不到，不列出；LUT 不在 `/odm/etc/camera/meishe_lut`、`filters_lut` 的也不列出。
+
+已知取舍：BasicTone 旁路后，“调节”页的影调/饱和滑杆不再生效（它们走同一条被旁路的重渲链路）；保存/导出走滤镜阶段的输出，滤镜效果保留。
 
 ## 相册编辑理光水印
 
@@ -111,11 +116,21 @@ GR 模式向相机的播放器请求自己的音效（14 快门，15/16 长曝�
 
 ## 柔光：HDF、黑柔与白柔
 
-三档柔光都由 `libmsnativefilter.so` 的 ProMist 在 HLG 帧上合成：预览走 `MsRenderHDRTexture`（RGBA8 HLG 纹理），成片走 `MsRenderHardwareBuffer`（P010 硬件缓冲，先 1280×960 缩略图，后台再处理全尺寸）。`SMsEffectParam` +0x48 是柔光开关、+0x4c 是类型：弱 = 1、中 = 0、强 = 2。
+三档柔光都由 `libmsnativefilter.so` 的 ProMist 在 HLG 帧上合成：预览走 `MsRenderHDRTexture`（RGBA8 HLG 纹理），成片在 PKJ110 上走 `MsRenderHDRHostBuffer`（`SMsHostBufferInfo`：四个平面指针、四个字节行距，宽高与色彩编码从 +0x30 起，P010 半平面），`MsRenderHardwareBuffer` 与 `MsRenderHostBuffer` 只留直通探针。`SMsEffectParam` +0x48 是柔光开关、+0x4c 是类型：弱 = 1、中 = 0、强 = 2。
 
 替换在“拍摄 → 实验性功能 → 物理柔光”二级页里按挡开关（`soft_light_weak_hdf`、`soft_light_medium_black_mist`、`soft_light_strong_white_mist`，默认关），相机打开（变焦条创建）时以位掩码读入原生层，未开的挡走原厂。弱档为 HDF、中档为 1/4 黑柔、强档为白柔：`soft_light.cpp` 在调用期间关掉原厂 ProMist，让美摄渲染滤镜的其余部分，再对输出做光学散射：按大师管线的中性色调曲线（内置 gamma 表加六张原厂 LMT 灰轴的平均，逐通道；`soft_light_curve.h`，由 `tools/softlight/gen_curve.py` 生成）把 HLG 信号反解回场景光（18% 灰 = 0.18，传感器削顶约灰上 5.9 档），13 抽头降采样金字塔与逐级帐篷上采样链，每级每通道的权重来自物理光学模拟的蒸馏（`soft_light_weights.h`，由 `tools/softlight/gen_weights.py` 从工作区 `实验\柔光替换\pyramid_weights.json` 生成），HDF 散射约 20%（皮升墨滴，覆盖率 10%，集中在 0.6° 以内；HDF 属于 GR 的 28 mm 镜头，光晕按 28 mm 视场计算、不随变焦变化，黑柔与白柔随当前焦距）、黑柔约 15%（多在 0.3–1.3° 的光晕里，另吸收 18%，按透过率补回）、白柔约 26%（七成在 3° 以外，成乳白雾），Hybrid Raw 里已削顶的光源比记录值亮（RAWMax 台灯按削顶最少的通道至少 1.8 倍），HDF 按 2.6 倍真实亮度处理：接近削顶的像素送入金字塔前按峰值通道放大（削顶下 0.5 档起线性升到 2.6），周围约 0.1° 的平均亮度在削顶下 0.3 档以内时直透光也放大到 2.6 倍（按邻域均值判断，纹理不被拉开），压肩把光源压成一片白；光晕由光源的真实亮度撑起，散射比例因此只需约 20%，画面其余部分不发雾。黑柔与白柔的削顶像素按记录值散射：大师帧里被照亮的白色表面也会削顶，经宽光晕放大会像光源一样发光。超出传感器削顶的光按峰值通道软压肩，再按同一条曲线编码回 HLG。预览在美摄的 GL 上下文里跑，保存并恢复 GL 状态；成片在 CPU 上算同一套金字塔，把每个像素编码值的变化量加回 P010（色度按 2×2 平均），未散射处保持原值。
 
 光晕是镜头前的角度，在画面里随焦距缩放：Java 侧（`softlight/SoftLight.java`）在变焦条创建时报 1x、`Zoom.setZoom` 时报当前变焦对应的等效焦距（`common/ZoomFocal.java`，按相机配置的变焦档位插值），原生侧按 log₂(焦距像素数) 在权重表里插值；超出表尾时金字塔基准每倍焦距上移一级。
+
+挡位与强度也放在系统属性里，因为相机进程读不到模块的 SharedPreferences（跨 uid 且跨 SELinux MLS 类别，`XSharedPreferences` 恒空）：`persist.omnicam.aura.softlight` 是位掩码，`persist.omnicam.aura.slgain` 是强度百分比（原生接受 0–400，默认 100，UI 给 0–100），每次渲染现读，所以调强度不需要重启相机；`persist.omnicam.aura.slkeep=1` 是诊断开关，保留原厂柔光、只叠加替换。强度把权重整体乘 s、core 收回 `(1−s)·Σw`：权重表本身满足 `core + Σw = transmission`，所以等价于原片与滤镜的线性混合，s=0 时写回严格恒等（日志 `0.0% of pixels changed`）。同一缓冲 500 ms 内的第二次散射会跳过（`already scattered, skipping`），免得重试或第二遍把光晕叠两次。
+
+成片这一级在 X8U 上有两条通道：相机重启后的第一张（以及长时间空闲后的第一张）走 `4096×3072` 全尺寸，之后每张走 `1280×960` 代理帧（连拍时也是代理帧）。两条都把效果带进最终 JPEG，只是光晕在代理帧上算完再抬回原尺寸；耗时因此差一个量级（全尺寸约 0.6 s，代理帧约 0.16 s），连拍不会因为散射而掉帧。`pass` 日志在渲染形状变化时打一行（入口、尺寸、兆像素、像素格式、色彩编码、行距、原厂柔光开关与类型、替换挡位掩码），一张片子的日志就能看出它走的是哪条；早先那里打的是“面积占本进程最大帧的比例”，分母会随拍摄推进变大，代理帧先出现时读成 0.44 而非 0.10，已改为兆像素。
+
+全尺寸一版要 1.6–2.0 s，四个优化把它压到 0.6 s 上下（数字来自每张一行的 `stages: l0/pyramid/up/composite` 日志）：① 行程并行从跨步改为连续块，配合六行线程本地缓存（槽位 = 行号 mod 6，滑动窗口恰好覆盖被逐出的行），金字塔第一级的 boost 每源像素只算一次左右而不是十三次；② `boostClipped`/`coreGain` 把阈值判断提到 `log2` 之前，阈值以下的像素一次比较就出结果；③ 复合的帐篷上采样拆成两遍（先水平后垂直），水平遍顺序读粗级，垂直遍只读一条 L2 驻留的条带，16 次散乱读变 4 次，条带存的是预反射的粗级行，数学与逐像素 `tentAt` 严格一致；④ 改动像素计数从“每像素一次共享原子加”改为每条带本地累加——共享原子在 8 线程下是纯粹的 cache line 争用，一项就占了复合阶段的四分之三。另有等价性验证：跨构建同场景同参数对比的逐像素差小于同构建连拍的噪声基线。
+
+强度超过 100% 时 `core` 会先归零再继续放大权重：不归零的话 core 变负，会在每条边周围“吸光”，画面出现暗边。归零之后超限只是把滤镜推向纯扩散，不会反相。
+
+成片缓冲的尺寸不固定：同一台机器上 3072×4096 的照片有时在 1280×960 的代理帧上渲染。差的是锐化而不是分辨率 —— 3.2 倍硬降采样的画面在 1024 宽上的拉普拉斯会掉七成以上，实测只掉 24%，径向频谱也只是平缓的 −2~−6 dB；两族的 JPEG 量化表逐项相同，差的只是一层多帧降噪/锐化（大族 6.4–7.0 MB、噪声低 24%，小族 3.0–3.5 MB）。跨族比较 A/B 无效，先看两张的字节数是否同族。
 
 ## 大师调节栏的颗粒
 

@@ -74,11 +74,30 @@ public final class GalleryColorPalette {
         String sdk = "com.oplus.ocs.camera.ipusdk.processunit.palette.PaletteProcessUnitSDK";
         XposedHelpers.findAndHookMethod(sdk, sdkLoader, "isTextureRequest", XC_MethodReplacement.returnConstant(Boolean.FALSE));
         XposedHelpers.findAndHookMethod(sdk, sdkLoader, "processImage", new XC_MethodHook() {
+            private android.opengl.EGLDisplay display;
+            private android.opengl.EGLSurface draw, read;
+            private android.opengl.EGLContext context;
+
             @Override protected void beforeHookedMethod(MethodHookParam param) {
-                EGLContext context = EGL14.eglGetCurrentContext();
+                display = EGL14.eglGetCurrentDisplay();
+                context = EGL14.eglGetCurrentContext();
+                draw = EGL14.eglGetCurrentSurface(EGL14.EGL_DRAW);
+                read = EGL14.eglGetCurrentSurface(EGL14.EGL_READ);
                 if (context == null || context == EGL14.EGL_NO_CONTEXT) return;
                 if (XposedHelpers.getObjectField(param.thisObject, "mShareGlContext") != null) return;
-                XposedHelpers.callMethod(param.thisObject, "setShareGlContext", EGL14.eglGetCurrentDisplay(), context);
+                XposedHelpers.callMethod(param.thisObject, "setShareGlContext", display, context);
+            }
+
+            @Override protected void afterHookedMethod(MethodHookParam param) {
+                // The SDK's GL bridge makes its own context current and does not always restore
+                // the caller's; the editor then renders into the wrong context (glUseProgram
+                // GL_INVALID_VALUE) and the preview goes black. Put back what was current.
+                if (context != null && context != EGL14.EGL_NO_CONTEXT) {
+                    if (EGL14.eglGetCurrentContext() == context) return;
+                    EGL14.eglMakeCurrent(display, draw, read, context);
+                } else if (EGL14.eglGetCurrentContext() != EGL14.EGL_NO_CONTEXT) {
+                    EGL14.eglMakeCurrent(EGL14.EGL_NO_DISPLAY, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT);
+                }
             }
         });
     }
@@ -97,6 +116,7 @@ public final class GalleryColorPalette {
                 if (loader instanceof BaseDexClassLoader && loader.toString().contains(SDK_JAR)) {
                     loaders[i] = sharedLibraryLoader(loader.getParent());
                     p010PathOnly(loaders[i]);
+                    restyleDirectly(loaders[i]);
                     GalleryFilters.install(loaders[i]);
                     return true;
                 }
@@ -106,5 +126,69 @@ public final class GalleryColorPalette {
             Log.e(TAG, "camera unit SDK loader replacement failed", error);
         }
         return false;
+    }
+
+    /**
+     * The palette pipeline cannot re-render from src.image on this device: the native meta read
+     * fails ("resolvePaletteSrcOrientation invalid metaIndex=0" — X8U captures store src.image as
+     * a plain JPEG where X10 uses a private format plus basictone meta) and the BasicTone stage
+     * outputs garbage, while the gallery hardcodes runFilterStage=false so the selected style is
+     * never applied at all. Both are replaced: BasicTone passes its input through (every photo is
+     * already toned at capture), and the filter stage runs for any style except the one the photo
+     * was captured with (already baked in, see GalleryPaletteScope.capturedFilter). The result is
+     * the stock filter editor's rendering path, which does work here.
+     */
+    private static void restyleDirectly(ClassLoader sdkLoader) {
+        String unit = "com.oplus.ocs.camera.ipusdk.processunit.palette.PaletteProcessUnitSDK";
+        String stage = "com.oplus.ocs.camera.ipusdk.processunit.palette.PaletteFilterPreviewStage";
+        try {
+            XposedHelpers.findAndHookMethod(unit, sdkLoader, "runBasicToneStage",
+                String.class, android.graphics.Bitmap.class, android.graphics.Bitmap.class,
+                String.class, boolean.class, new XC_MethodReplacement() {
+                    @Override protected Object replaceHookedMethod(MethodHookParam param) {
+                        android.graphics.Bitmap input = (android.graphics.Bitmap) param.args[1];
+                        if (input == null) return null;  // the caller turns this into failProcess
+                        try {
+                            return input.copy(input.getConfig(), false);
+                        } catch (Throwable error) {
+                            return input;  // e.g. a HARDWARE bitmap: better aliasing than failing
+                        }
+                    }
+                });
+            final Class<?> entity = XposedHelpers.findClass(
+                "com.oplus.ocs.camera.ipusdk.processunit.BaseProcessUnitSDK$ParameterEntity", sdkLoader);
+            XposedHelpers.findAndHookMethod(stage, sdkLoader, "shouldRunFilterStage", entity,
+                new XC_MethodHook() {
+                    @Override protected void afterHookedMethod(MethodHookParam param) {
+                        Object value = needsFilterStage(sdkLoader, stage, param.args[0]);
+                        if (value == null) return;  // hook setup incomplete: keep the stock answer
+                        param.setResult(value);
+                    }
+                });
+            Log.i(TAG, "gallery palette restyle enabled");
+        } catch (Throwable error) {
+            Log.e(TAG, "gallery palette restyle hook failed", error);
+        }
+    }
+
+    /** needsFilterStage(entity), plus a runFilterStage override: false for the captured style. */
+    private static Boolean needsFilterStage(ClassLoader sdkLoader, String stage, Object entity) {
+        if (entity == null) return Boolean.FALSE;
+        try {
+            boolean needs = (Boolean) XposedHelpers.callStaticMethod(XposedHelpers.findClass(stage, sdkLoader),
+                "needsFilterStage", entity);
+            if (!needs) return Boolean.FALSE;
+            String captured = GalleryPaletteScope.capturedFilter;
+            if (captured != null) {
+                Object key = XposedHelpers.getStaticObjectField(XposedHelpers.findClass(
+                    "com.oplus.ocs.camera.ipusdk.processunit.palette.key.PaletteProcessKeySDK", sdkLoader),
+                    "PALETTE_FILTER_ID");
+                if (captured.equals(XposedHelpers.callMethod(entity, "getProcessValue", key))) return Boolean.FALSE;
+            }
+            return Boolean.TRUE;
+        } catch (Throwable error) {
+            Log.e(TAG, "needsFilterStage reflection failed", error);
+            return Boolean.FALSE;
+        }
     }
 }

@@ -31,9 +31,8 @@ final class GalleryFilters {
             final Class<?> manager = XposedHelpers.findClass(MANAGER, sdkLoader);
             XposedHelpers.findAndHookMethod(manager, "init", android.content.Context.class, boolean.class, boolean.class, new XC_MethodHook() {
                 @Override protected void afterHookedMethod(MethodHookParam param) {
-                    int normal = append(XposedHelpers.getStaticObjectField(manager, "sFilterGroup"), FilterScope.NORMAL);
-                    int master = append(XposedHelpers.getStaticObjectField(manager, "sProFilterGroup"), FilterScope.MASTER);
-                    Log.i(TAG, "gallery filters added: normal " + normal + ", master " + master);
+                    append(XposedHelpers.getStaticObjectField(manager, "sFilterGroup"), FilterScope.NORMAL);
+                    append(XposedHelpers.getStaticObjectField(manager, "sProFilterGroup"), FilterScope.MASTER);
                 }
             });
         } catch (Throwable error) {
@@ -43,12 +42,14 @@ final class GalleryFilters {
 
     @SuppressWarnings("unchecked")
     private static int append(Object group, FilterScope scope) {
-        int added = 0;
+        int added = 0, disabled = 0, present = 0, noLut = 0;
         try {
             List<String> types = (List<String>) XposedHelpers.getObjectField(group, "mBackTypeList");
             for (FilterEntry entry : FilterCatalog.get(scope).entries()) {
-                if (!entry.enabled || entry.source == FilterEntry.Source.IMPORTED) continue;
-                if (types.contains(entry.id) || !lutExists(entry.id)) continue;
+                if (!entry.enabled) { disabled++; continue; }
+                if (entry.source == FilterEntry.Source.IMPORTED) continue;
+                if (types.contains(entry.id)) { present++; continue; }
+                if (!lutExists(entry.id)) { noLut++; continue; }
                 String name = entry.title != null ? entry.title : "R.string." + entry.nameResource;
                 XposedHelpers.callMethod(group, "addBack", entry.id, name);
                 added++;
@@ -56,6 +57,8 @@ final class GalleryFilters {
         } catch (Throwable error) {
             Log.e(TAG, "gallery " + scope + " filters failed", error);
         }
+        Log.i(TAG, "gallery " + scope + " filters: added " + added + ", disabled " + disabled
+            + ", alreadyPresent " + present + ", noLut " + noLut);
         return added;
     }
 
