@@ -13,6 +13,8 @@ import local.jiege.hook.common.Log;
 final class HighPixelDiagnostics {
     private static final String TAG = "HighPixelRequest";
     private static final String MODE = "high_pixel_mode";
+    private static final java.util.Set<String> snap =
+        java.util.Collections.synchronizedSet(new java.util.HashSet<>());
 
     private HighPixelDiagnostics() {}
 
@@ -25,14 +27,18 @@ final class HighPixelDiagnostics {
             @Override protected void afterHookedMethod(MethodHookParam param) {
                 try {
                     Object tag = param.args[0];
-                    if (!MODE.equals(XposedHelpers.getObjectField(tag, "mCaptureMode"))) return;
+                    Object mode = XposedHelpers.getObjectField(tag, "mCaptureMode");
+                    // Log every mode that carries a filter: 大师 / photo / 哈苏超清 / video, so the
+                    // working ones (大师) can be read off the same line as the broken one.
+                    if (XposedHelpers.getBooleanField(tag, "mbFilterOpen") == false
+                        && !MODE.equals(mode)) return;
                     Object aps = XposedHelpers.getObjectField(tag, "mApsRequestTag");
                     String algorithms = "?";
                     if (!param.hasThrowable() && param.getResult() != null) {
                         Object list = XposedHelpers.callMethod(param.getResult(), "get", algorithmKey);
                         algorithms = list instanceof String[] ? Arrays.toString((String[]) list) : String.valueOf(list);
                     }
-                    Log.i(TAG, "id=" + XposedHelpers.getIntField(tag, "mRequestId")
+                    Log.i(TAG, "mode=" + mode + " id=" + XposedHelpers.getIntField(tag, "mRequestId")
                         + " camera=" + XposedHelpers.getIntField(tag, "mRearFrontCameraId")
                         + " live=" + XposedHelpers.getBooleanField(tag, "mbIsLivePhotoOn")
                         + " pictureSize=" + XposedHelpers.getObjectField(aps, "mPictureSize")
@@ -48,6 +54,20 @@ final class HighPixelDiagnostics {
                         + " filter=" + XposedHelpers.getObjectField(tag, "mFilterType")
                         + " softLight=" + XposedHelpers.getBooleanField(tag, "mbSoftLightOpen") + "/" + XposedHelpers.getObjectField(tag, "mSoftLightType")
                         + " algorithms=" + algorithms);
+                    // One full snapshot of the filter-related fields per mode *and* filter: 和光 and
+                    // 反差黑白 each carry their own grain block, so every filter gets its own line.
+                    Object filterType = XposedHelpers.getObjectField(tag, "mFilterType");
+                    if (snap.add(String.valueOf(mode) + "|" + filterType)) {
+                        StringBuilder text = new StringBuilder("snap mode=").append(mode).append(':');
+                        for (java.lang.reflect.Field field : tag.getClass().getDeclaredFields()) {
+                            String name = field.getName();
+                            if (!name.toLowerCase().contains("filter")) continue;
+                            field.setAccessible(true);
+                            try { text.append(' ').append(name).append('=').append(field.get(tag)); }
+                            catch (Throwable ignored) { }
+                        }
+                        Log.i(TAG, text.toString());
+                    }
                 } catch (Throwable error) {
                     Log.e(TAG, "log", error);
                 }

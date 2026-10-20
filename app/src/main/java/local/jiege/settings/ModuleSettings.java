@@ -91,6 +91,9 @@ public final class ModuleSettings {
     public static final String SOFT_LIGHT_MEDIUM_BLACK_MIST = "soft_light_medium_black_mist";
     public static final String SOFT_LIGHT_STRONG_WHITE_MIST = "soft_light_strong_white_mist";
 
+    /** Experimental: share of the simulated filter in the replacement, in percent (applies immediately). */
+    public static final String SOFT_LIGHT_STRENGTH = "soft_light_strength";
+
     /** Experimental: 和光 capture renders Portra 400's emulsion scatter, halation and DIR edges (实验/Portra光学) instead of the stock highlight blend. */
     public static final String MASTER_PORTRA_PHYSICAL = "master_portra_physical";
 
@@ -127,6 +130,7 @@ public final class ModuleSettings {
 
     public static int defaultInt(String key) {
         if (SHUTTER_VOLUME.equals(key)) return 60;
+        if (SOFT_LIGHT_STRENGTH.equals(key)) return 100;
         if (NATURAL_SOFTEN.equals(key)) return 0;
         if (MASTER_FILM_DENSITY_C.equals(key) || MASTER_FILM_DENSITY_M.equals(key) || MASTER_FILM_DENSITY_Y.equals(key)) return 100;
         if (MASTER_LOOK_PRINT.equals(key) || MASTER_HNCS_INTENT.equals(key) || MASTER_HNCS_CURVE.equals(key)) return 0;
@@ -165,8 +169,6 @@ public final class ModuleSettings {
             case XPAN_CLEAN_ANIMATION:
             case HIGH_PIXEL_200M_NO_FACE:
                 return false;
-            case POP_HIGH_PIXEL:
-            case UNLOCK_25MP:
             case HIGH_PIXEL_EFFECTS:
             case SHUTTER_IN_SILENT:
             case SHUTTER_IN_VIBRATE:
@@ -177,8 +179,32 @@ public final class ModuleSettings {
             case NATURAL_NO_AI_DETAIL:
             case NATURAL_NO_LCE:
                 return true;
+            case POP_HIGH_PIXEL:
+                // POP's 25M upscale rides ApsProcessor.updateUpscaleSize by rewriting the capture mode to
+                // "photo_mode" for the duration of the call. On PKJ110 (X8U) that rewrite makes the engine
+                // write the full-sensor RAW (4096x3072 / 5888x4416, 47-123MB, leading bytes are raw pixels
+                // not a JPEG SOI) instead of an encoded JPEG, so the shot opens as a thumbnail then blanks
+                // out in the gallery. The 25M output never actually materialised on X8U anyway (every
+                // healthy POP shot is 12.5M), so gate it to PMA110 (X9 Ultra) like UNLOCK_25MP.
+                return isPma110();
+            case UNLOCK_25MP:
+                // The unlock serves config copies generated from the X9 Ultra stock /odm. On PKJ110 those
+                // describe 25M QBC / DCG / 2DOL nodes this sensor does not have, and the capture gate
+                // (ProfessionalMode.isAllowedToTakePicture -> BaseMode.getSensorModeFromRequest) then
+                // throws on a null sensor-mode array: every mode's shutter silently does nothing.
+                // PMA110 (X9 Ultra) keeps it on.
+                return isPma110();
             default:
                 throw new IllegalArgumentException("Unknown setting " + key);
         }
+    }
+
+    /** True on the Find X9 Ultra (PMA110), the only device the 25MP unlock's config copies fit. */
+    public static boolean isPma110() {
+        return contains("PMA110", android.os.Build.MODEL) || contains("PMA110", android.os.Build.DEVICE);
+    }
+
+    private static boolean contains(String needle, String value) {
+        return value != null && value.toUpperCase().contains(needle);
     }
 }

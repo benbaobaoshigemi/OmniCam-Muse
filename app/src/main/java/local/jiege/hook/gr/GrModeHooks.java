@@ -6,6 +6,7 @@ import de.robv.android.xposed.XC_MethodReplacement;
 import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
 import java.lang.reflect.Method;
+import local.jiege.hook.common.DataStore;
 import local.jiege.hook.common.Log;
 import local.jiege.hook.common.Reflection;
 import local.jiege.hook.common.SuperCall;
@@ -22,6 +23,7 @@ import local.jiege.hook.common.Symbols;
 final class GrModeHooks {
     private static final String TAG = "RicohGrPort";
     private static final String STYLE_FEATURE = "com.oplus.feature.effect.style.support";
+    private static final String STYLE_INDEX = "key_gr_mode_effect_current_select_index";
 
     private GrModeHooks() {}
 
@@ -39,6 +41,21 @@ final class GrModeHooks {
         Log.guard(TAG, "GR style feature", () -> hookStyleFeature(classLoader));
         Log.guard(TAG, "GR mode arrangement", () -> GrModeArrange.install(symbols));
         Log.i(TAG, "GR mode hooks installed");
+    }
+
+    /**
+     * Puts the stored GR style index back in range. The camera's GR menu dresses itself from that
+     * one number and walks straight into its style table with it, so a stored -1 - which is what a
+     * click on a row whose list position is unknown leaves behind - trips the menu the moment it is
+     * built. Nothing is written while the stored value is usable.
+     */
+    static void repairStyleIndex(ClassLoader classLoader) throws Throwable {
+        Symbols symbols = Symbols.get();
+        Object key = DataStore.key(symbols, "Keys.grStyleIndex", STYLE_INDEX);
+        Object stored = DataStore.get(symbols, classLoader, key, 0);
+        if (stored instanceof Integer && ((Integer) stored) >= 0) return;
+        Log.i(TAG, "GR style index out of range (" + stored + "); reset to 0");
+        DataStore.put(symbols, classLoader, key, 0);
     }
 
     /** CameraEntry's mode entry has no GR case; enter as professional and restore the argument. */

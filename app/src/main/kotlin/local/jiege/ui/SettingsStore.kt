@@ -32,6 +32,15 @@ class SettingsStore(context: Context) {
         AppRestart.stopCamera()
     }
 
+    /**
+     * An integer the hooks re-read on every use, so the change lands on the next render: saved
+     * without the camera restart that every other setting needs.
+     */
+    fun setIntQuiet(key: String, value: Int) {
+        if (getInt(key) == value) return
+        preferences.edit().putInt(key, value).apply()
+    }
+
     fun getString(key: String): String = preferences.getString(key, ModuleSettings.defaultString(key)) ?: ModuleSettings.defaultString(key)
 
     fun setString(key: String, value: String) {

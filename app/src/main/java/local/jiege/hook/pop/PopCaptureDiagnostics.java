@@ -1,0 +1,74 @@
+package local.jiege.hook.pop;
+
+import de.robv.android.xposed.XC_MethodHook;
+import de.robv.android.xposed.XposedHelpers;
+import java.util.Arrays;
+import local.jiege.hook.common.Log;
+
+/**
+ * Read-only capture probe, off unless asked for: {@code setprop persist.omnicam.aura.popdiag 1},
+ * then force-stop the camera. It logs one line per matching capture request with the exact
+ * algorithm chain the app assembled plus the HDR / palette / 10-bit flags.
+ *
+ * <p>Matches the modes the palette needs verifying on: POP (retro), portrait/bokeh (front+rear),
+ * and Hasselblad hi-res (high_pixel). For POP this settled the X8U "gate 3/4" question (basic_tone
+ * stays in the chain under ultraHdr=false, so the .so NOP is unnecessary). For portrait/front and
+ * hi-res it reveals whether {@code aps_algo_color_palette} actually enters the capture list and
+ * whether {@code mbPaletteEnable} is set.
+ *
+ * <p>Rides {@code ApsProcessor.createMetaItemInfo} (a narrow, read-only path) and logs at most
+ * once per distinct mode+id.
+ */
+final class PopCaptureDiagnostics {
+    private static final String TAG = "PopCapture";
+    private static final String PROP = "persist.omnicam.aura.popdiag";
+    private static final String SDK = "com.oplus.ocs.camera.";
+
+    private PopCaptureDiagnostics() {}
+
+    static void install(ClassLoader classLoader) throws Throwable {
+        if (!"1".equals(readProp(PROP))) return;
+        Class<?> processor = XposedHelpers.findClass(SDK + "consumer.ApsProcessor", classLoader);
+        Class<?> tagClass = XposedHelpers.findClass(SDK + "common.util.CameraRequestTag", classLoader);
+        Class<?> keys = XposedHelpers.findClass(SDK + "common.util.ParameterKeys", classLoader);
+        final Object algorithmKey = XposedHelpers.getStaticObjectField(keys, "KEY_CAPTURE_ALGO_LIST");
+        XposedHelpers.findAndHookMethod(processor, "createMetaItemInfo", tagClass, new XC_MethodHook() {
+            @Override protected void afterHookedMethod(MethodHookParam param) {
+                try {
+                    Object tag = param.args[0];
+                    Object mode = XposedHelpers.getObjectField(tag, "mCaptureMode");
+                    if (!(mode instanceof String)) return;
+                    String m = ((String) mode).toLowerCase();
+                    if (!(m.contains("retro") || m.contains("portrait") || m.contains("bokeh")
+                        || m.contains("high_pixel") || m.contains("highpixel"))) return;
+                    Object aps = XposedHelpers.getObjectField(tag, "mApsRequestTag");
+                    String algorithms = "?";
+                    if (!param.hasThrowable() && param.getResult() != null) {
+                        Object list = XposedHelpers.callMethod(param.getResult(), "get", algorithmKey);
+                        algorithms = list instanceof String[] ? Arrays.toString((String[]) list) : String.valueOf(list);
+                    }
+                    Log.i(TAG, "mode=" + mode
+                        + " camera=" + XposedHelpers.getIntField(tag, "mRearFrontCameraId")
+                        + " tenBit=" + XposedHelpers.getBooleanField(tag, "mbPhoto10BitsEnable")
+                        + " ultraHdr=" + XposedHelpers.getBooleanField(tag, "mbUltraHdrEnable")
+                        + " palette=" + XposedHelpers.getBooleanField(tag, "mbPaletteEnable")
+                        + " pictureSize=" + XposedHelpers.getObjectField(aps, "mPictureSize")
+                        + " algorithms=" + algorithms);
+                } catch (Throwable error) {
+                    Log.e(TAG, "log", error);
+                }
+            }
+        });
+        Log.i(TAG, "POP capture probe installed (read-only)");
+    }
+
+    private static String readProp(String name) {
+        try {
+            Class<?> type = Class.forName("android.os.SystemProperties");
+            return String.valueOf(type.getMethod("get", String.class, String.class)
+                .invoke(null, name, ""));
+        } catch (Throwable error) {
+            return "";
+        }
+    }
+}

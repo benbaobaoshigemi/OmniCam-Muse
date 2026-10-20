@@ -24,6 +24,10 @@ namespace {
 constexpr char kOdmConfig[] = "/odm/etc/camera/config/";
 constexpr char kRoot[] = "/data/user/0/com.oplus.camera/files/jiege/unlock25mp/";
 constexpr char kMarker[] = "/data/user/0/com.oplus.camera/files/jiege/unlock25mp/enabled";
+// Profile file written by module/service.sh ("PMA110" / "PKJ110"). The staged copies come from the
+// X9 Ultra stock /odm, so a device that is not PMA110 must never read them: its capture gate asks for
+// sensor modes those files do not carry and the shutter dies on a null array.
+constexpr char kProfile[] = "/data/user/0/com.oplus.camera/files/jiege/profile";
 constexpr const char *kNames[] = {
     "lighthousemain",
     "lighthousewide",
@@ -35,6 +39,16 @@ constexpr const char *kNames[] = {
 
 bool readable(const char *path) {
     return syscall(SYS_faccessat, AT_FDCWD, path, R_OK, 0) == 0;
+}
+
+/** True when the profile file says PMA110 (raw syscalls: the path hooks must not recurse). */
+bool profileIsPma110() {
+    int fd = (int)syscall(SYS_openat, AT_FDCWD, kProfile, O_RDONLY | O_CLOEXEC, 0);
+    if (fd < 0) return false;
+    char buf[16] = {0};
+    ssize_t n = syscall(SYS_read, fd, buf, sizeof(buf) - 1);
+    syscall(SYS_close, fd);
+    return n >= 6 && std::strncmp(buf, "PMA110", 6) == 0;
 }
 
 }  // namespace
@@ -51,6 +65,7 @@ const char *unlock25mpRemapPath(const char *path, char *buf, size_t n) {
         }
     }
     if (!known || !readable(kMarker)) return nullptr;
+    if (!profileIsPma110()) return nullptr;
     std::snprintf(buf, n, "%s%s", kRoot, name);
     return readable(buf) ? buf : nullptr;
 }

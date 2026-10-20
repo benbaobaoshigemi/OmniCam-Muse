@@ -95,9 +95,18 @@ internal class InjectionState(val checks: List<Check>, val health: Health) {
             return InjectionState(checks, health)
         }
 
-        /** The module's camera libraries are bind-mounted over /odm, so they sit on another device. */
+        /**
+         * The module's camera files are bind-mounted over /odm, so a mounted file sits on another
+         * device than the directory holding it. The feature config is the file to probe: both device
+         * profiles mount it, and it is the same one UnmountedGuard reads in the camera process, so
+         * the settings app and the camera agree. Probing a camera library instead reports the port as
+         * unmounted: PKJ110 keeps X8U's stock libAlgoInterface.so / libmsnativefilter.so on purpose
+         * (the X10 backend supplies the basic-tone one), so those libraries are never bind-mounted
+         * there - which is exactly the state this check used to mistake for a missing module.
+         */
         private fun moduleMounted(): Boolean = try {
-            Os.stat("/odm/lib64/libAlgoInterface.so").st_dev != Os.stat("/odm/lib64").st_dev
+            val config = Os.stat("/odm/etc/camera/config/camera_unit_feature_config.protobuf")
+            config.st_dev != Os.stat("/odm/etc/camera/config").st_dev
         } catch (_: Exception) {
             false
         }

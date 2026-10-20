@@ -1,5 +1,7 @@
 package local.jiege.hook.highpixel;
 
+import android.view.MotionEvent;
+import android.view.View;
 import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
@@ -31,9 +33,21 @@ public final class HighPixelEffects {
     private static final String MODE = "highPixel";
     private static final String FILTER_PROCESS = "pref_filter_process_key";
     private static final String FILTER_MENU = "pref_filter_menu";
+    /** The photo mode's filter declaration; separate from the menu key, and a mode without it gets no filter feature. */
+    private static final String FILTER_MODE = "key_photo_mode_filter";
     private static final String PALETTE = "key_support_palette";
+    /** BaseMode.H4/.x6 only write the capture keys (bb.s.e0 tone / bb.s.d0 saturation) when this is on. */
+    private static final String BASIC_TONE = "func_support_video_basic_tone";
+    private static final String PROP_ENTRY = "persist.omnicam.aura.hpentry";
 
     private static final Set<String> answered = Collections.synchronizedSet(new HashSet<>());
+    private static volatile android.view.View entryButton;
+    private static volatile View.OnClickListener entryListener;
+    private static volatile Object effectHost;
+    private static volatile Object entrySetup;
+    private static volatile Object entryAnimParam;
+    private static final Set<String> reportedModes =
+        Collections.synchronizedSet(new HashSet<>());
 
     private HighPixelEffects() {}
 
@@ -50,6 +64,8 @@ public final class HighPixelEffects {
             symbols.method("FilterPresenter.softLightIndex"), symbols.field("FeaturePresenter.modeName")));
         Log.guard(TAG, "beauty model", () -> hookBeautyModel(symbols.cls("BeautyModel")));
         Log.guard(TAG, "entry button", () -> hookEntryButton(symbols.method("Mode.effectEntry"), symbols.cls("HighPixelMode")));
+        Log.guard(TAG, "entry force-show", () -> hookEntryVisibility(classLoader, symbols.cls("HighPixelMode")));
+        Log.guard(TAG, "entry setup", () -> hookEntrySetup(classLoader, symbols.cls("CaptureParams")));
         Log.guard(TAG, "request log", () -> HighPixelDiagnostics.install(classLoader));
     }
 
@@ -62,7 +78,8 @@ public final class HighPixelEffects {
         XposedHelpers.findAndHookMethod(mode, "getSupportFunction", String.class, new XC_MethodHook() {
             @Override protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
                 String key = (String) param.args[0];
-                if (!FILTER_PROCESS.equals(key) && !FILTER_MENU.equals(key) && !PALETTE.equals(key)) return;
+                if (!FILTER_PROCESS.equals(key) && !FILTER_MENU.equals(key) && !FILTER_MODE.equals(key)
+                    && !PALETTE.equals(key) && !BASIC_TONE.equals(key)) return;
                 if (!Settings.get(ModuleSettings.HIGH_PIXEL_EFFECTS)) return;
                 Boolean answer = PALETTE.equals(key) ? paletteConfigured(paletteMode) : Boolean.TRUE;
                 param.setResult(answer);
@@ -197,9 +214,283 @@ public final class HighPixelEffects {
                 if (Boolean.TRUE.equals(param.getResult())) return;
                 param.setResult(Boolean.TRUE);
                 if (answered.add("entryButton")) Log.i(TAG, "right-hand entry button enabled for the mode");
+                showEntry();
             }
         });
         Log.i(TAG, "entry button installed");
+    }
+
+    /**
+     * Answers Li() is not enough on PKJ110: the button ({@code camera_menu_right_enter_button}) stays GONE, so the
+     * panel never opens and a tap falls through to the preview as a focus tap. The camera binds the button's click
+     * listener in {@code tp.k0.M6}; keep that view and, once the mode says it supports the entry, put it back on
+     * screen. Behind its own switch ({@code persist.omnicam.aura.hpentry}) while it is being measured.
+     */
+    private static void hookEntryVisibility(ClassLoader classLoader, final Class<?> mode) {
+        if (!"1".equals(prop(PROP_ENTRY))) {
+            Log.i(TAG, "entry force-show off (" + PROP_ENTRY + ")");
+            return;
+        }
+        Class<?> host;
+        try {
+            host = XposedHelpers.findClass("tp.k0", classLoader);
+        } catch (Throwable missing) {
+            Log.i(TAG, "entry force-show: no effect container host, skipped");
+            return;
+        }
+        XposedBridge.hookAllMethods(host, "M6", new XC_MethodHook() {
+            @Override protected void afterHookedMethod(MethodHookParam param) {
+                Object view = XposedHelpers.getObjectField(param.thisObject, "o");
+                if (!(view instanceof View)) return;
+                effectHost = param.thisObject;
+                if (param.args.length > 0 && param.args[0] instanceof View.OnClickListener) {
+                    entryListener = (View.OnClickListener) param.args[0];
+                }
+                entryButton = (View) view;
+                Log.i(TAG, "entry button bound: vis=" + ((View) view).getVisibility()
+                    + " clickable=" + ((View) view).isClickable()
+                    + " listeners=" + ((View) view).hasOnClickListeners()
+                    + " @" + Integer.toHexString(System.identityHashCode(view)));
+                adoptListener((View) view);
+                if (isMode(param.thisObject, mode)) showEntry();
+            }
+        });
+        // The camera positions every right-hand button in Wg(); it runs on each UI refresh, cold start
+        // included, and it is where the entry ends up hidden for this mode.
+        XposedBridge.hookAllMethods(host, "Wg", new XC_MethodHook() {
+            @Override protected void afterHookedMethod(MethodHookParam param) {
+                Object view = XposedHelpers.getObjectField(param.thisObject, "o");
+                if (!(view instanceof View)) return;
+                effectHost = param.thisObject;
+                entryButton = (View) view;
+                if (isMode(param.thisObject, mode)) showEntry();
+            }
+        });
+        // tp.k0.ze(a0) is the camera's "hide the filter entry" run (it posts tp.j0 with case 0, which
+        // hides the main entry, the filter button and the soft-light one). For 哈苏超清 the mode answers
+        // the filter keys true, so this hide is what leaves the button GONE with nothing to bring it
+        // back; skip it while the mode is up and the button stays as laid out, listener included.
+        XposedBridge.hookAllMethods(host, "ze", new XC_MethodHook() {
+            @Override protected void beforeHookedMethod(MethodHookParam param) {
+                if (!isMode(param.thisObject, mode)) return;
+                param.setResult(null);
+                if (answered.add("skipHide")) Log.i(TAG, "entry hide skipped for the mode");
+            }
+        });
+        // The button is laid out but comes back with CLICKABLE cleared: the down event then leaves
+        // onTouchEvent unhandled, no up follows, and the tap never becomes a click. Put the flag back
+        // right before the event is consumed.
+        Class<?> button = XposedHelpers.findClass(
+            "com.oplus.camera.ui.effectcontainer.MenuRightButton", classLoader);
+        XposedBridge.hookAllMethods(button, "onTouchEvent", new XC_MethodHook() {
+            @Override protected void beforeHookedMethod(MethodHookParam param) {
+                Object view = param.thisObject;
+                if (!(view instanceof View)) return;
+                View target = (View) view;
+                if (target.getVisibility() != View.VISIBLE) return;
+                if (!target.isClickable()) {
+                    target.setClickable(true);
+                    Log.i(TAG, "entry button made clickable on touch (listeners=" + target.hasOnClickListeners() + ")");
+                }
+                // The camera wraps the button in a TouchDelegate that enlarges its hit rect
+                // (MenuRightButton.I0). View.onTouchEvent swallows the event there and never reaches
+                // performClick, so the tap animates the button and nothing else. With the button on
+                // screen at its real size the delegate is not needed.
+                if (target.getTouchDelegate() != null) {
+                    target.setTouchDelegate(null);
+                    Log.i(TAG, "entry button touch delegate cleared");
+                }
+                // No performClick() here: View.onTouchEvent already does it once the flag is back,
+                // and a second click toggles the palette straight back off.
+                if (param.args[0] instanceof MotionEvent
+                    && ((MotionEvent) param.args[0]).getActionMasked() == MotionEvent.ACTION_UP) {
+                    adoptListener(target);
+                }
+            }
+        });
+        Log.i(TAG, "entry force-show installed");
+    }
+
+    /**
+     * The camera binds the click listener on one MenuRightButton while another instance with the same id
+     * is the one on screen (each mode rebuilds the container), so the visible button had no listener at
+     * all and performClick() answered false. Copy the listener across.
+     */
+    private static void adoptListener(View button) {
+        final View.OnClickListener listener = entryListener;
+        if (listener == null || button.hasOnClickListeners()) return;
+        button.setOnClickListener(listener);
+        Log.i(TAG, "entry listener adopted from the bound instance");
+    }
+
+    /**
+     * The camera sets the entry up in CaptureParams.W3(a0, boolean, boolean): the icon (zn.a.f9), the
+     * click listener (zn.a.M6) and the panel state. For 哈苏超清 it either never runs or runs with the
+     * flags that skip the icon/listener block, which is why the button was on screen with no picture on
+     * it and no listener behind it. Keep the last W3 receiver and replay the call with both flags on.
+     */
+    private static void hookEntrySetup(ClassLoader classLoader, Class<?> params) {
+        if (!"1".equals(prop(PROP_ENTRY))) {
+            Log.i(TAG, "entry setup off (" + PROP_ENTRY + ")");
+            return;
+        }
+        // The mode switch handler always runs, and it is where the instance can be picked up even when
+        // W3 itself is skipped for this mode.
+        XposedBridge.hookAllMethods(params, "R1", new XC_MethodHook() {
+            @Override protected void afterHookedMethod(MethodHookParam param) {
+                final Object owner = param.thisObject;
+                Object name = null;
+                try {
+                    name = XposedHelpers.getObjectField(owner, "q");
+                } catch (Throwable ignored) {
+                    // fall through with no mode name
+                }
+                if (!"highPixel".equals(name)) return;
+                entrySetup = owner;
+                // The mode has no filter presenter of its own when it is entered by switching (the
+                // camera never re-points the shared filter presenter at 哈苏超清, since the mode has no
+                // filter feature in its own graph). Re-point the presenter built for another mode here,
+                // before the filter row is first read, so the row is not left out.
+                HighPixelFilters.ensurePresenter();
+                if (reportedModes.add("switch:" + name)) {
+                    new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(
+                        HighPixelEffects::replaySetup, 700);
+                }
+            }
+        });
+        XposedBridge.hookAllMethods(params, "W3", new XC_MethodHook() {
+            @Override protected void beforeHookedMethod(MethodHookParam param) {
+                entrySetup = param.thisObject;
+                String name = "?";
+                try {
+                    name = String.valueOf(XposedHelpers.getObjectField(param.thisObject, "q"));
+                } catch (Throwable ignored) {
+                    // mode field missing: the log below stays generic
+                }
+                if (reportedModes.add("setup:" + name + ":" + param.args[1] + "," + param.args[2])) {
+                    Log.i(TAG, "entry setup: mode=" + name + " flags=" + param.args[1] + "," + param.args[2]);
+                }
+            }
+        });
+        try {
+            Class<?> anim = XposedHelpers.findClass("com.oplus.camera.util.a0", classLoader);
+            // Photo mode's click toggles the panel with the animation param that carries mFlag=11; the
+            // one W3 passes on the "close" branch (a0.j) has mFlag=0 and does nothing visible.
+            entryAnimParam = findOpenParam(anim);
+            if (entryAnimParam == null) entryAnimParam = XposedHelpers.getStaticObjectField(anim, "j");
+        } catch (Throwable error) {
+            Log.i(TAG, "entry setup: no animation param (" + error + ")");
+        }
+        Log.i(TAG, "entry setup hooked");
+    }
+
+    /**
+     * Give the button what the camera never gave it for this mode: the entry icon and a click listener.
+     * In photo mode a tap ends up in tp.k0.wg(AnimationParam) - the effect panel toggle - so the same
+     * call is what the listener does here. The icon is photo mode's own entry drawable.
+     */
+    private static void dressEntry(View button) {
+        final Object host = effectHost;
+        if (host == null) return;
+        if (!button.hasOnClickListeners()) {
+            try {
+                Class<?> drawables = XposedHelpers.findClass(
+                    "com.oplus.camera.feature.captureparam.R$drawable", button.getClass().getClassLoader());
+                int icon = XposedHelpers.getStaticIntField(drawables, "effect_style_entry_icon");
+                XposedHelpers.callMethod(host, "f9", icon);
+                Log.i(TAG, "entry icon set (" + icon + ")");
+            } catch (Throwable error) {
+                Log.i(TAG, "entry icon failed: " + error);
+            }
+        }
+        // The camera builds no effect panel for this mode, so its own listener has nothing to show.
+        // Hand the tap to the module's palette instead (the same tone/saturation path POP and the video
+        // pages use) and keep the camera's listener behind it, so a page that does have a panel still
+        // behaves once the mode has been left.
+        final View.OnClickListener camera = entryListener;
+        button.setOnClickListener(v -> {
+            if (local.jiege.hook.master.MasterPalette.toggleFromEntry()) {
+                Log.i(TAG, "entry click -> module palette");
+                return;
+            }
+            if (camera != null) camera.onClick(v);
+        });
+        Log.i(TAG, "entry click listener installed by the module");
+    }
+
+    /** The static {@code a0} whose flags match the effect-panel toggle photo mode uses. */
+    private static Object findOpenParam(Class<?> anim) {
+        for (java.lang.reflect.Field field : anim.getFields()) {
+            if (!java.lang.reflect.Modifier.isStatic(field.getModifiers())) continue;
+            if (!anim.isAssignableFrom(field.getType())) continue;
+            try {
+                Object value = field.get(null);
+                String text = String.valueOf(value);
+                if (text.contains("mFlag=11")) {
+                    Log.i(TAG, "entry open param: a0." + field.getName() + " " + text);
+                    return value;
+                }
+            } catch (Throwable ignored) {
+                // a field that cannot be read is simply skipped
+            }
+        }
+        return null;
+    }
+
+    /** Ask the camera to set the entry up again with the icon and listener flags on. */
+    private static void replaySetup() {
+        final Object owner = entrySetup;
+        final Object param = entryAnimParam;
+        final View button = entryButton;
+        if (owner == null || param == null || button == null) return;
+        try {
+            XposedHelpers.callMethod(owner, "W3", param, Boolean.TRUE, Boolean.TRUE);
+            Log.i(TAG, "entry setup replayed, listeners=" + button.hasOnClickListeners());
+        } catch (Throwable error) {
+            Log.i(TAG, "entry setup replay failed: " + error);
+        }
+    }
+
+    /** True when the container host's current mode is 哈苏超清. */
+    private static boolean isMode(Object host, Class<?> mode) {        try {
+            Object ui = XposedHelpers.getObjectField(host, "g");
+            Object manager = XposedHelpers.callMethod(ui, "c0");
+            Object holder = XposedHelpers.getObjectField(manager, "a");
+            Object current = XposedHelpers.getObjectField(holder, "a");
+            return mode.isInstance(current);
+        } catch (Throwable error) {
+            return false;
+        }
+    }
+
+    /** Put the entry button back on screen; the container may still be laying out, so retry briefly. */
+    private static void showEntry() {
+        final View button = entryButton;
+        if (button == null || !"1".equals(prop(PROP_ENTRY))) return;
+        for (int delay : new int[] {0, 200, 500, 900}) {
+            button.postDelayed(() -> forceShow(button), delay);
+        }
+    }
+
+    private static void forceShow(View button) {
+        if (button.getVisibility() == View.VISIBLE && button.getWidth() > 0) return;
+        button.setVisibility(View.VISIBLE);
+        button.setAlpha(1f);
+        button.setClickable(true);
+        button.requestLayout();
+        adoptListener(button);
+        dressEntry(button);
+        Log.i(TAG, "entry button forced visible: " + button.getWidth() + "x" + button.getHeight()
+            + " listeners=" + button.hasOnClickListeners());
+    }
+
+    private static String prop(String name) {
+        try {
+            Class<?> type = Class.forName("android.os.SystemProperties");
+            return String.valueOf(type.getMethod("get", String.class, String.class).invoke(null, name, ""));
+        } catch (Throwable error) {
+            return "";
+        }
     }
 
     /** The hard-coded list of modes that use the normal filter (and its palette): photo mode's, plus 哈苏超清. */

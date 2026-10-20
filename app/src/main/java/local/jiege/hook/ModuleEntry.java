@@ -6,7 +6,11 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage;
 import local.jiege.hook.common.CameraLogMirror;
 import local.jiege.hook.common.Log;
 import local.jiege.hook.common.Symbols;
+import local.jiege.hook.diag.EntryButtonProbe;
+import local.jiege.hook.diag.GrStylePanelProbe;
+import local.jiege.hook.diag.HighPixelProbe;
 import local.jiege.hook.filters.FilterGroupInjector;
+import local.jiege.hook.gr.GrEffectValues;
 import local.jiege.hook.gr.GrPort;
 import local.jiege.hook.gallery.AddressNavigation;
 import local.jiege.hook.gallery.BatchWatermark;
@@ -14,7 +18,10 @@ import local.jiege.hook.gallery.WatermarkSeriesUnlock;
 import local.jiege.hook.guard.UnmountedGuard;
 import local.jiege.hook.highpixel.HighPixel200mFace;
 import local.jiege.hook.highpixel.HighPixelEffects;
+import local.jiege.hook.highpixel.HighPixelFilters;
+import local.jiege.hook.highpixel.HighPixelSupport;
 import local.jiege.hook.launch.KeyLaunchMode;
+import local.jiege.hook.master.MasterPalette;
 import local.jiege.hook.masterfilter.MasterFilterCompletion;
 import local.jiege.hook.mastercolor.MasterColor;
 import local.jiege.hook.masterlut.MasterContrast;
@@ -35,6 +42,7 @@ import local.jiege.hook.watermark.XpanWatermarkIsolation;
 import local.jiege.hook.xpan.XpanLivePhoto;
 import local.jiege.hook.xpan.XpanViewfinderClean;
 import local.jiege.hook.video.VideoFilterHighSpec;
+import local.jiege.hook.x10.PaletteFeatureSwitch;
 import local.jiege.hook.x10.X10FilterPort;
 
 /**
@@ -105,7 +113,15 @@ public final class ModuleEntry implements IXposedHookLoadPackage, IXposedHookZyg
             PopPort.installCamera(classLoader, CAMERA.equals(param.processName));
             FilterGroupInjector.installCamera(classLoader);
             X10FilterPort.installCamera(classLoader);
+            // X8U port: the palette feature switch is answered in Java (the OCS config container
+            // cannot be synthesised on PKJ110) -- see x10/PaletteFeatureSwitch.
+            Log.guard("Palette", "feature switch", () -> PaletteFeatureSwitch.installCamera(classLoader));
+            // X8U port: our own palette panel (master, video, POP and the GR page share it).
+            Log.guard("Palette", "master palette", () -> MasterPalette.install(classLoader));
             HighPixelEffects.installCamera(classLoader);
+            // X8U port: the hi-res mode's own husselblad label switch (PKJ110 answers false).
+            Log.guard("HighPixel", "hasselblad entry", () -> HighPixelSupport.installCamera(classLoader));
+            Log.guard("HighPixelFilters", "install", () -> HighPixelFilters.install(classLoader));
             TiltShiftCapture.installCamera(classLoader);
             SeamlessBlurGuard.installCamera(classLoader);
             KeyLaunchMode.installCamera(classLoader);
@@ -127,6 +143,13 @@ public final class ModuleEntry implements IXposedHookLoadPackage, IXposedHookZyg
             SoftLight.installCamera(classLoader);
             MasterLutSlots.installCamera(classLoader);
             MasterContrast.installCamera(classLoader);
+            // X8U port: the GR page's own parameter dial (drives the camera's GR rows), plus the
+            // read-only probes left over from the port work. The probes are off unless their
+            // persist.omnicam.aura.* property names one; none of them rides a hot path.
+            Log.guard("GrEffects", "install", () -> GrEffectValues.install(classLoader));
+            Log.guard("HpProbe", "install", () -> HighPixelProbe.install(classLoader));
+            Log.guard("EntryProbe", "install", () -> EntryButtonProbe.install(classLoader));
+            Log.guard("GrProbe", "install", () -> GrStylePanelProbe.install(classLoader));
         }
     }
 }

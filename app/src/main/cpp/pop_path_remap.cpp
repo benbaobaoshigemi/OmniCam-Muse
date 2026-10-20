@@ -26,6 +26,12 @@ static constexpr char kOdmRetro[] = "/odm/etc/camera/basictone/setting_Retro";
 static constexpr char kAppRetro[] = "/data/user/0/com.oplus.camera/files/pop_port/setting_Retro";
 static constexpr char kOdmLut[] = "/odm/etc/camera/meishe_lut/";
 static constexpr char kAppLut[] = "/data/user/0/com.oplus.camera/files/pop_port/meishe_lut/";
+// POP decision tree: the stock /odm copy is an encrypted container, so the capture decision never
+// sees the POP BasicTone branches it needs to run the sliders. The patched plaintext
+// (tools/patch_x8u_pop_decision.py) is staged here and served in place of the stock file whenever
+// it exists -- no ODM directory is replaced, drop the staged file to revert.
+static constexpr char kOdmDecision[] = "/odm/etc/camera/config/oplus_camera_preview_decision_config.json";
+static constexpr char kAppDecision[] = "/data/user/0/com.oplus.camera/files/pop_port/oplus_camera_preview_decision_config.json";
 // Master filters the user imported in the settings app (MasterFilterSync copies them here).
 static constexpr char kImportedLut[] = "/data/user/0/com.oplus.camera/files/jiege/lut/";
 
@@ -66,6 +72,14 @@ static const char *remap(const char *path, char *buf, size_t n) {
         if (destExists(buf)) {
             return buf;
         }
+        return path;
+    }
+    if (std::strcmp(path, kOdmDecision) == 0) {
+        if (destExists(kAppDecision)) {
+            __android_log_print(ANDROID_LOG_INFO, "PopPort", "decision remap: %s -> %s", path, kAppDecision);
+            return kAppDecision;
+        }
+        __android_log_print(ANDROID_LOG_INFO, "PopPort", "decision NOT remapped (no staged copy): %s", path);
         return path;
     }
     if (std::strncmp(path, kOdmLut, sizeof(kOdmLut) - 1) == 0) {

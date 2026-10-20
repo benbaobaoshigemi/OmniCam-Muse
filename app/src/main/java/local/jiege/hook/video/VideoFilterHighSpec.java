@@ -35,6 +35,15 @@ public final class VideoFilterHighSpec {
     /** Last mode seen by the filter presenter; the conflict lookup has no mode of its own. */
     private static volatile String currentMode;
 
+    /**
+     * True while a .bin filter is active in commonVideo at 4K (<=60fps, no AI enhancement):
+     * the recorder must then be pushed onto the app encoder pipeline or the filter never
+     * reaches the clip.
+     */
+    private static volatile boolean wantAppEncoder;
+
+    private static int noneIndex;
+
     private VideoFilterHighSpec() {}
 
     public static void installCamera(ClassLoader classLoader) {
@@ -59,7 +68,7 @@ public final class VideoFilterHighSpec {
         sizeKey = featureKey(keys, keyType, "getVideoSizeFromSp");
         fpsKey = featureKey(keys, keyType, "getVideoFpsFromSp");
         aiKey = featureKey(keys, keyType, "isAiEnhancementVideoOpen");
-        final int noneIndex = XposedHelpers.getStaticIntField(
+        noneIndex = XposedHelpers.getStaticIntField(
             XposedHelpers.findClass("com.oplus.camera.filter.FilterUtil", classLoader), "sNoneIndex");
 
         Class<?> featureInfo = XposedHelpers.findClass("com.oplus.ocs.camera.configure.ProtobufFeatureInfoImpl", classLoader);
@@ -85,6 +94,7 @@ public final class VideoFilterHighSpec {
             @Override protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
                 Object w = param.thisObject;
                 currentMode = mode(w);
+                updateRecorderWant(w);
                 if (!MODE.equals(currentMode) || !enabled()) return;
                 Spec spec = Spec.read(w);
                 if (spec == null || !spec.allowed()) return;
@@ -105,6 +115,7 @@ public final class VideoFilterHighSpec {
             @Override protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                 Object w = param.thisObject;
                 currentMode = mode(w);
+                updateRecorderWant(w);
                 if (!MODE.equals(currentMode) || !enabled()) return;
                 int index = (Integer) param.args[0];
                 if (index <= 0 || index <= noneIndex || (Integer) symbols.call("FilterPresenter.currentIndex", w) != index) return;
@@ -118,6 +129,45 @@ public final class VideoFilterHighSpec {
                 symbols.call("FeaturePresenter.resetState", w);
             }
         });
+
+        // 4K: the record processor never picks the app encoder pipeline on its own (stock has no
+        // video-filter path at 4K on this build), so a .bin filter rides the preview only and the
+        // clip comes out unfiltered (measured on the X8U: 1080p30/60 clips carry the retro
+        // filter; 4K60 clips match a no-filter take frame for frame). Answer is_use_media_codec
+        // ourselves while such a filter is active, so the encoder is fed from the app pipeline
+        // the filter is on. Everywhere else, including when the camera itself already picks the
+        // app encoder (1080p with a filter), its own choice stands.
+        Class<?> recorderKeys = XposedHelpers.findClass("om.e0$g", classLoader);
+        final Object appCodecKey = XposedHelpers.getStaticObjectField(recorderKeys, "b");
+        if (!"is_use_media_codec".contentEquals(
+                String.valueOf(XposedHelpers.getObjectField(appCodecKey, "a")))) {
+            throw new IllegalStateException("recorder key mismatch");
+        }
+        XposedBridge.hookAllMethods(XposedHelpers.findClass("om.c0", classLoader), "a", new XC_MethodHook() {
+            @Override protected void afterHookedMethod(MethodHookParam param) {
+                if (param.args.length != 1 || param.args[0] != appCodecKey || !wantAppEncoder) return;
+                if (Boolean.TRUE.equals(param.getResult())) return;
+                param.setResult(Boolean.TRUE);
+            }
+        });
+        Log.i(TAG, "4K recorder backend hook installed");
+    }
+
+    /** Refreshes {@link #wantAppEncoder} from the presenter's current filter and spec. */
+    private static void updateRecorderWant(Object presenter) throws Throwable {
+        boolean want = false;
+        if (MODE.equals(currentMode) && enabled()) {
+            Spec spec = Spec.read(presenter);
+            if (spec != null && spec.is4k() && spec.allowed()) {
+                int index = (Integer) symbols.call("FilterPresenter.currentIndex", presenter);
+                String filterType = type(presenter, index);
+                if (index > noneIndex && filterType != null && filterType.endsWith(".bin")
+                        && !RETENTION.equals(filterType) && !NEON.equals(filterType)) {
+                    want = true;
+                }
+            }
+        }
+        wantAppEncoder = want;
     }
 
     /** The FeatureKey constant (a static field of FeatureKeys) whose name is {@code name}. */

@@ -281,6 +281,11 @@
    "params": [],
    "ret": "@GrEffect"
   },
+  "GrStylePanel.rows": {
+   "kind": "field",
+   "in": "@GrStylePanel",
+   "type": "java.util.ArrayList"
+  },
   "GrEffect": {
    "kind": "class",
    "paramOf": [
@@ -1243,6 +1248,16 @@
    ],
    "multi": true
   },
+  "Keys.grStyleIndex": {
+   "kind": "class",
+   "clinitStrings": [
+    "key_gr_mode_effect_current_select_index"
+   ],
+   "staticFieldTypes": [
+    "com.oplus.camera.data.DataKey"
+   ],
+   "multi": true
+  },
   "Keys.snap": {
    "kind": "class",
    "clinitStrings": [
@@ -1621,11 +1636,11 @@
    "name": "e",
    "type": "java.lang.String"
   },
-  "Zoom.labelBitmap": {
+  "Zoom.labelBitmaps": {
    "kind": "field",
    "in": "com.oplus.camera.feature.zoom.view.ZoomSeekBar",
-   "name": "I6",
-   "type": "android.graphics.Bitmap"
+   "type": "android.graphics.Bitmap",
+   "multi": true
   },
   "Zoom.fadeLabels": {
    "kind": "method",
@@ -1950,9 +1965,9 @@
   },
   "EffectItemView": {
    "kind": "class",
-   "strings": [
-    "MasterEffectContainer",
-    "expand"
+   "fieldTypes": [
+    "@EffectItem",
+    "@EffectContainer"
    ]
   },
   "EffectItemView.onClick": {

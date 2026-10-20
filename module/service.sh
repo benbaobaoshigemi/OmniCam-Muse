@@ -127,8 +127,37 @@ find "$ASSET_DIR" "$PLD_APP" -type d -exec chmod 0755 {} \;
 find "$ASSET_DIR" "$PLD_APP" -type f -exec chmod 0644 {} \;
 restorecon -R "$ASSET_DIR" "$APP/files/odm" 2>/dev/null || true
 
+# POP capture decision (X8U only). The stock /odm copy of oplus_camera_preview_decision_config.json
+# is an encrypted container, so the POP BasicTone branches (rear/front retro + non-POP guard) never
+# reach the capture decision and the POP sliders do nothing on the shot. The patched plaintext
+# (payload_pkj110/pop_decision.json, tools/patch_x8u_pop_decision.py) is staged here and served by
+# pop_path_remap.cpp in place of the stock file. PMA110 keeps its own X9U decision, which already
+# carries the POP branches and is bound over /odm by post-fs-data.sh.
+if [ "$(getprop ro.product.model 2>/dev/null)" = PKJ110 ]; then
+    cp -f "$MODDIR/payload_pkj110/pop_decision.json" "$ASSET_DIR/oplus_camera_preview_decision_config.json"
+    chown "$APP_UID:$APP_UID" "$ASSET_DIR/oplus_camera_preview_decision_config.json"
+    chmod 0644 "$ASSET_DIR/oplus_camera_preview_decision_config.json"
+    restorecon "$ASSET_DIR/oplus_camera_preview_decision_config.json" 2>/dev/null || true
+fi
+
 # Normal-mode 25MP unlock (tools/patch_25mp.py): the relaxed config copies; the settings hook adds the
 # "enabled" marker while the switch is on and unlock25mp.cpp redirects reads to these copies.
+#
+# The copies are generated from the X9 Ultra stock /odm, so they only describe sensor modes PMA110 has.
+# On PKJ110 the redirected decision tree hands the capture gate a null sensor-mode array and every
+# mode's shutter silently does nothing - unlock25mp.cpp therefore also requires the profile file below
+# to say PMA110. Written here because this is the only place that runs with the app's uid available.
+PROFILE_FILE="$APP/files/jiege/profile"
+mkdir -p "$APP/files/jiege"
+if [ "$(getprop ro.product.model 2>/dev/null)" = PMA110 ]; then
+    echo PMA110 > "$PROFILE_FILE"
+else
+    echo PKJ110 > "$PROFILE_FILE"
+fi
+chown "$APP_UID:$APP_UID" "$PROFILE_FILE"
+chmod 0644 "$PROFILE_FILE"
+restorecon "$PROFILE_FILE" 2>/dev/null || true
+
 UNLOCK_DIR="$APP/files/jiege/unlock25mp"
 mkdir -p "$UNLOCK_DIR"
 rm -f "$UNLOCK_DIR"/live50*  # staged by 1.3.0-1.3.5 (live 50MP, removed)

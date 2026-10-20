@@ -24,6 +24,7 @@
 #include <pthread.h>
 #include <string>
 #include <sys/mman.h>
+#include <sys/system_properties.h>
 #include <unistd.h>
 #include <vector>
 
@@ -34,6 +35,8 @@ namespace {
 constexpr char kTag[] = "NaturalMode";
 constexpr char kRoot[] = "/data/user/0/com.oplus.camera/files/jiege/natural";
 constexpr char kStockJson[] = "/odm/etc/camera/conf_tuning_params.json";
+// The settings mirror the settings app pushes; bit 1 is the master switch.
+constexpr char kMaskProp[] = "persist.omnicam.aura.natural";
 
 constexpr char kLibraryName[] = "libOPAlgoCamHDRTransformCamera.so";
 // TmcDownTransModule::mergedGdfUpsampleAndCalOutput(...): the parameter types are left out so a
@@ -139,9 +142,23 @@ bool findEpsSite(EpsSite &out) {
     return matches == 1;
 }
 
+// The master switch of the settings mirror. The camera-side sync only runs while the camera
+// builds capture requests, so a toggle made while the camera is backgrounded (then killed by
+// the settings app) leaves a stale edited json/soften behind; the file state alone would keep
+// serving it. When the property is empty (no mirror, e.g. the settings page was never opened)
+// the file states decide, as before.
+bool naturalMasterOn() {
+    char value[PROP_VALUE_MAX] = {};
+    if (__system_property_get(kMaskProp, value) <= 0) return true;
+    char *end = nullptr;
+    long mask = std::strtol(value, &end, 10);
+    if (end == value) return true;  // not a number: treat as no mirror
+    return (mask & 1) != 0;
+}
+
 // eps wanted by the settings; 0 = stock.
 float wantedEps() {
-    if (!softenMode.load()) return 0;
+    if (!softenMode.load() || !naturalMasterOn()) return 0;
     char path[128];
     std::snprintf(path, sizeof(path), "%s/soften", kRoot);
     FILE *file = std::fopen(path, "re");
@@ -245,7 +262,7 @@ const char *naturalRemapPath(const char *path, char *buf, size_t n) {
     if (std::strcmp(path, kStockJson) != 0) return nullptr;
     applyEps();
     std::snprintf(buf, n, "%s/conf_tuning_params.json", kRoot);
-    lastServed = access(buf, R_OK) == 0;
+    lastServed = naturalMasterOn() && access(buf, R_OK) == 0;
     writeStatus();
     return lastServed ? buf : nullptr;
 }

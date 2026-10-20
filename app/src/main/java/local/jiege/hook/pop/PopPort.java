@@ -13,6 +13,9 @@ public final class PopPort {
 
     /** @param mainProcess resources are only needed in the camera's main process */
     public static void installCamera(ClassLoader classLoader, boolean mainProcess) {
+        // Runs in every process: the GL canvas that needs the program may be built before the
+        // feature hooks below are reached, and it deliberately touches no config value.
+        Log.guard(TAG, "inverse mask program", () -> PopInverseMaskProgram.install(classLoader));
         if (mainProcess) {
             try {
                 PopResources.install(classLoader);
@@ -39,6 +42,11 @@ public final class PopPort {
             PopSdrStyle.install(classLoader);
         } catch (Throwable error) {
             Log.e(TAG, "POP SDR style hook unavailable", error);
+        }
+        try {
+            PopCaptureDiagnostics.install(classLoader);
+        } catch (Throwable error) {
+            Log.e(TAG, "POP capture probe unavailable", error);
         }
     }
 }
