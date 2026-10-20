@@ -18,7 +18,9 @@ import local.jiege.settings.ModuleSettings;
  * nothing else. The native side (natural_mode.cpp) serves them to the camera algorithms: the
  * tuning json when they open the stock one (per photo on PMA110, once per process at startup on
  * PKJ110 — a change there applies after the next camera restart), the eps when the tone transfer
- * library loads.
+ * library loads. The files are brought up to date at install and on every capture request, and
+ * the native side also gates both on the master bit of the mirror property, so a toggle made
+ * while the camera is backgrounded still applies on the next start.
  *
  *   conf_tuning_params.json  stock tuning json with the selected features zeroed; absent = stock
  *   soften                   guided-filter eps of the normal-photo tone transfer; absent = stock
@@ -50,6 +52,12 @@ public final class NaturalMode {
 
     public static void installCamera(ClassLoader classLoader) {
         ROOT.mkdirs();
+        // Bring the files up to date before the algorithms can open them: the capture-request
+        // sync below only fires once the camera is live, which is after the tuning json is read
+        // on PKJ110 (latched once per process). Without this, the first start after a change
+        // would serve the stale file, and turning the mode off would not take effect until some
+        // later session happened to run the sync with the camera open.
+        sync();
         Log.guard(TAG, "soften mode isolation", () -> XposedBridge.hookMethod(
             local.jiege.hook.common.Symbols.get().method("ModeSwitch.switch"), new XC_MethodHook() {
                 @Override protected void beforeHookedMethod(MethodHookParam param) {
