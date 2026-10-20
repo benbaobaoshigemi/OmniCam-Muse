@@ -89,6 +89,7 @@ internal fun SettingPercent(
     title: String,
     enabled: Boolean = true,
     summary: String? = null,
+    onChange: () -> Unit = {},
 ) {
     var value by remember { mutableStateOf(store.getInt(key)) }
     BasicComponent(
@@ -98,7 +99,10 @@ internal fun SettingPercent(
             Slider(
                 value = value / 100f,
                 onValueChange = { value = Math.round(it * 100) },
-                onValueChangeFinished = { store.setInt(key, value) },
+                onValueChangeFinished = {
+                    store.setInt(key, value)
+                    onChange()
+                },
                 enabled = enabled,
                 modifier = Modifier.padding(top = 8.dp),
             )

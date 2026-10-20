@@ -202,3 +202,11 @@ GR 模式向相机的播放器请求自己的音效（14 快门，15/16 长曝�
 ### 未做
 
 调色盘（影调、饱和度）在这个模式的预览已通，成片仍是 `palette=false`：请求上的 `mbPaletteEnable` 没有被置真。走的是与滤镜同一条打标路，跟上文 `stampTag` 一样处理即可。
+
+## 拍照模式自然化
+
+`hook/natural/NaturalMode.java` 把开关镜像成两份文件（`files/jiege/natural/` 下）：`conf_tuning_params.json` 是按开关清零后的原厂 tuning json（关 AI 细节 = `EnhanceNetParamsSet`/`EnhanceNetJDDGANParamsSet` 下所有 `*BlendWeight`/`*MaskWeight` 加 `TMCParamsSet` 的 `usmStrength1X/3X`；关 LCE = `lceStrength(Face)`），`soften` 是普通照片色调迁移的引导滤波 eps（对数插值 1e-7 → 1e-3，0 % = 原厂）。相机算法每张照片打开 `/odm/etc/camera/conf_tuning_params.json` 时被 native 侧（`natural_mode.cpp` 的路径重定向）换成编辑副本；eps 由 native 在 `libOPAlgoCamHDRTransformCamera.so` 里按符号名 `_ZN18TmcDownTransModule29mergedGdfUpsampleAndCalOutput` 找到函数、再搜函数体内 `mov/movk` 构造 0x33d6bf95 的指令对改写（找到才动，找不到整库不动，`status` 文件记 `eps site not located`）。柔化不作用于大师与理光模式（`ModeSwitch.switch` 时 `setSoftenMode` 关掉）。
+
+开关与柔化百分比也镜像在系统属性里（同柔光的原因：相机进程读不到模块的 SharedPreferences）：`persist.omnicam.aura.natural` 位掩码（1 主开关、2 关 AI 细节、4 关 LCE）、`persist.omnicam.aura.naturalsoften` 百分比；属性优先、设置文件兜底，设置页每次开关变化与进页时 `setprop` 同步。生效时机两机不同：X9U 每张照片读一次 json、下一张即生效；X8U 实测算法在相机进程启动时读一次并锁存，`status` 翻成 `edited copy` 后同进程内不再重读，改开关后要 force-stop 重启相机才生效（首张 stock 配置 3.46 MB vs 编辑副本 2.94 MB，细节重绘停了、压缩率升 15%）。
+
+X8U（PKJ110）上的现实边界：tuning json 存在且 `EnhanceNetParamsSet` 七组 42 个混合权重键全齐（关 AI 细节完整生效），但 `TMCParamsSet` 没有 lceStrength/usmStrength 键（关 LCE 空转，UI 在该机型隐藏这两行），库里也没有 `TmcDownTransModule` 符号与 1e-7 指令对（柔化空转）——X8U 的引导滤波是 `imgproc::FastGuidedFilterNeonO1Reflect101<float>::filter` 等 6 个导出符号、eps 由调用方作为参数传入，将来做柔化要走导出函数参数 hook，而不是改立即数。
