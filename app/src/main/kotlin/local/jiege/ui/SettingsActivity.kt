@@ -39,6 +39,7 @@ import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.basic.ArrowUpDown
 import top.yukonga.miuix.kmp.icon.basic.Sidebar
 import top.yukonga.miuix.kmp.preference.SwitchPreference
+import top.yukonga.miuix.kmp.preference.WindowDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.darkColorScheme
 import top.yukonga.miuix.kmp.theme.lightColorScheme
@@ -140,7 +141,7 @@ private const val PAGE_KEY_MODE = 2
 private const val PAGE_SOFT_LIGHT = 3
 private const val PAGE_LOG = 4
 private const val PAGE_XPAN_CLEAN = 5
-private val PAGE_TITLES = mapOf(PAGE_PRESETS to "预设管理", PAGE_KEY_MODE to "启动模式", PAGE_SOFT_LIGHT to "物理柔光", PAGE_LOG to "日志", PAGE_XPAN_CLEAN to "XPan 取景净化")
+private val PAGE_TITLES = mapOf(PAGE_PRESETS to "预设管理", PAGE_KEY_MODE to "启动模式", PAGE_SOFT_LIGHT to "大师物理柔光", PAGE_LOG to "日志", PAGE_XPAN_CLEAN to "XPan 取景净化")
 
 @Composable
 private fun SettingsScreen(store: SettingsStore) {
@@ -204,6 +205,17 @@ private fun SettingsScreen(store: SettingsStore) {
 
 /** The 拍摄 tab: settings grouped by camera mode. */
 private fun LazyListScope.shootItems(store: SettingsStore, cardModifier: Modifier, onOpenSoftLight: () -> Unit, onOpenXpanClean: () -> Unit) {
+    item(key = "filter_panel") {
+        // Index = ModuleSettings.FILTER_PANEL_NONE / _SWIPE_UP / _LONG_PRESS.
+        var trigger by remember { mutableStateOf(store.getInt(ModuleSettings.FILTER_PANEL_TRIGGER)) }
+        SmallTitle(text = "滤镜")
+        Card(modifier = cardModifier) {
+            WindowDropdownPreference(listOf("无", "上滑", "长按"), trigger, "拉起快速切换滤镜面板") {
+                trigger = it
+                store.setInt(ModuleSettings.FILTER_PANEL_TRIGGER, it)
+            }
+        }
+    }
     item(key = "photo") {
         PhotoSection(store, cardModifier)
     }

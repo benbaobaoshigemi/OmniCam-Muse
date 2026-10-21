@@ -964,6 +964,38 @@ static bool loadRawLmt(const std::string &path, std::vector<float> &lut) {
     return ok;
 }
 
+// Find X8 Ultra: its stock master LMTs (looks/x8u/LMTLut0..3, PKJ110 17.0.0.104 /odm/etc/camera/basictone/lmt, verbatim)
+// laid onto this phone's six slots, so the stock selector keeps choosing by scene level and CCT parameter per frame.
+// X8U has this phone's LMT input coding (identical hybridraw built-in gamma) and ODT_Photo, so its tables
+// share the code space of the stock ones. Its TriggerBIN: two lux entries (0-195 / 550-10000, blended between,
+// as here) of two CCT-parameter nodes (<= 50, >= 600, linear between): LMTLut0/1 and LMTLut2/3.
+// Here each lux entry has three nodes (<= 50, 250-500, >= 700): the outer ones take X8U's nodes, the
+// middle one their mix at weight 0.591, the value that minimises the largest weight error against X8U's
+// ramp over the CCT parameter (0.23 at 250 and 500).
+static bool x8uSlots(std::vector<std::vector<float>> &tables) {
+    constexpr double kMiddle = 0.591;
+    std::vector<std::vector<float>> x8(4);
+    for (int i = 0; i < 4; i++)
+        if (!loadRawLmt(engineDir + "/looks/x8u/LMTLut" + std::to_string(i), x8[i])) return false;
+    tables.assign(kStockTables, {});
+    for (int entry = 0; entry < 2; entry++) {
+        const std::vector<float> &cool = x8[2 * entry], &warm = x8[2 * entry + 1];
+        tables[3 * entry] = cool;
+        tables[3 * entry + 2] = warm;
+        std::vector<float> &mid = tables[3 * entry + 1];
+        mid.resize(cool.size());
+        for (size_t i = 0; i < mid.size(); i++) mid[i] = float((1 - kMiddle) * cool[i] + kMiddle * warm[i]);
+    }
+    return true;
+}
+
+bool lookTables(const Key &key, std::vector<std::vector<float>> &tables, int threads) {
+    if (!engineReady()) return false;
+    if (key.look == "x8u") return x8uSlots(tables);
+    tables.assign(1, {});
+    return bake(key, tables[0], threads);
+}
+
 bool bake(const Key &key, std::vector<float> &lut, int threads) {
     if (!engineReady()) return false;
     if (key.look == "x7u") return loadRawLmt(engineDir + "/looks/x7u.lmt", lut);
@@ -1107,17 +1139,19 @@ bool readTable(const std::string &path, std::vector<float> &out) {
 
 }  // namespace
 
-bool blendWithStock(const Key &key, const std::vector<float> &look, const std::string &stockDir,
+bool blendWithStock(const Key &key, const std::vector<std::vector<float>> &looks, const std::string &stockDir,
                     std::vector<std::vector<float>> &tables, int threads) {
     constexpr int n = kLutSize;
     constexpr size_t nodes = size_t(n) * n * n;
     constexpr double kFloor = 1e-5;
-    if (!engineReady() || look.size() != 3 * nodes) return false;
+    if (!engineReady() || (looks.size() != 1 && looks.size() != size_t(kStockTables))) return false;
+    for (const auto &look : looks)
+        if (look.size() != 3 * nodes) return false;
     const double wt = std::min(std::max(double(key.toneWeight), 0.0), 1.0);
     const double wc = std::min(std::max(double(key.colourWeight), 0.0), 1.0);
     tables.clear();
     if (wt >= 1 && wc >= 1) {
-        tables.push_back(look);
+        tables = looks;
         return true;
     }
     std::vector<std::vector<float>> stock(kStockTables);
@@ -1132,14 +1166,12 @@ bool blendWithStock(const Key &key, const std::vector<float> &look, const std::s
     // Scene luma of every node's input code (through the same decode as the look bake), and the look's
     // linear-light output.
     std::vector<double> luma(nodes);
-    std::vector<float> eLook(3 * nodes);
     for (int b = 0; b < n; b++)
         for (int g = 0; g < n; g++)
             for (int r = 0; r < n; r++) {
                 size_t index = (size_t(b) * n + g) * n + r;
                 Vec3 lin = decode(d, key, ipe.data(), {r / double(n - 1), g / double(n - 1), b / double(n - 1)});
                 luma[index] = kW601[0] * lin[0] + kW601[1] * lin[1] + kW601[2] * lin[2];
-                for (int c = 0; c < 3; c++) eLook[c * nodes + index] = float(hlgInverse(look[c * nodes + index]));
             }
     auto neutral = [&](const float *e) {
         NeutralCurve curve;
@@ -1154,13 +1186,18 @@ bool blendWithStock(const Key &key, const std::vector<float> &look, const std::s
         }
         return curve;
     };
-    const NeutralCurve toneLook = neutral(eLook.data());
-    std::vector<float> toneLookAt(nodes);
-    for (size_t i = 0; i < nodes; i++) toneLookAt[i] = float(std::max(toneLook.at(luma[i]), kFloor));
+    std::vector<float> eLook(3 * nodes), toneLookAt(nodes);
+    auto prepareLook = [&](const std::vector<float> &look) {
+        for (size_t i = 0; i < 3 * nodes; i++) eLook[i] = float(hlgInverse(look[i]));
+        const NeutralCurve toneLook = neutral(eLook.data());
+        for (size_t i = 0; i < nodes; i++) toneLookAt[i] = float(std::max(toneLook.at(luma[i]), kFloor));
+    };
+    if (looks.size() == 1) prepareLook(looks[0]);
 
     tables.assign(kStockTables, std::vector<float>(3 * nodes));
     threads = std::max(1, std::min(threads, 8));
     for (int t = 0; t < kStockTables; t++) {
+        if (looks.size() > 1) prepareLook(looks[t]);
         std::vector<float> eStock(3 * nodes);
         for (size_t i = 0; i < 3 * nodes; i++) eStock[i] = float(hlgInverse(stock[t][i]));
         const NeutralCurve toneStock = neutral(eStock.data());

@@ -87,22 +87,18 @@ public final class GrGalleryWatermark {
     /** Built-in GR style assets are replaced by the staged files. */
     private static void hookStyleSource(final Symbols symbols) {
         try {
-            final Class<?> assetSource = symbols.cls("AssetStyleSource");
-            final Class<?> fileSource = symbols.cls("FileStyleSource");
-            XposedBridge.hookMethod(symbols.method("StyleLoader.resolve"),
+            XposedBridge.hookMethod(symbols.method("AssetStyleSource.open"),
                 new XC_MethodHook() {
                     @Override protected void beforeHookedMethod(MethodHookParam param) {
                         try {
-                            Object source = param.args[0];
-                            if (!assetSource.isInstance(source)) return;
-                            String fileName = styleFileName((String) symbols.get("AssetStyleSource.name", source));
+                            String fileName = styleFileName((String) symbols.get("AssetStyleSource.name", param.thisObject));
                             if (fileName == null) return;
                             File style = new File(STYLE_DIR, fileName);
                             if (!style.isFile()) {
                                 Log.i(TAG, "gallery GR style missing " + style);
                                 return;
                             }
-                            param.setResult(XposedHelpers.newInstance(fileSource, style.getAbsolutePath()));
+                            param.setResult(new FileInputStream(style));
                         } catch (Throwable error) {
                             Log.e(TAG, "gallery GR style routing failed", error);
                         }

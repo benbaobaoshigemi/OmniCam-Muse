@@ -7,6 +7,7 @@ import local.jiege.hook.common.Log;
 import local.jiege.hook.common.Settings;
 import local.jiege.hook.common.Symbols;
 import local.jiege.hook.common.ZoomFocal;
+import local.jiege.hook.filters.FilterScope;
 import local.jiege.settings.ModuleSettings;
 
 /**
@@ -14,7 +15,9 @@ import local.jiege.settings.ModuleSettings;
  * mist, strong (梦幻) as a white mist, all scattered with physically simulated point spreads in the native half
  * (soft_light.cpp). The halo is an angle in front of the lens, so its size in the image follows
  * the focal length; this half reports the 35mm-equivalent focal length of the current zoom, and
- * which levels are replaced (experimental settings, read when the camera opens).
+ * which levels are replaced (experimental settings, read when the camera opens). Everything here
+ * acts in 大师模式 only: the filter presenter reports its mode whenever it applies a filter or builds
+ * a capture request, and every other mode keeps the stock soft light and HDRTransform.
  */
 public final class SoftLight {
     private static final String TAG = "MuseSoftLight";
@@ -24,6 +27,8 @@ public final class SoftLight {
 
     private static native void nativeSetFocal(float millimetres);
     private static native void nativeSetLevels(boolean weak, boolean medium, boolean strong);
+    private static native void nativeSetNoLocalContrast(boolean on);
+    private static native void nativeSetMasterMode(boolean master);
 
     public static void installCamera(ClassLoader classLoader) {
         final Symbols symbols = Symbols.get();
@@ -35,8 +40,16 @@ public final class SoftLight {
                         Settings.get(ModuleSettings.SOFT_LIGHT_MEDIUM_BLACK_MIST),
                         Settings.get(ModuleSettings.SOFT_LIGHT_STRONG_WHITE_MIST));
                     nativeSetFocal(ZoomFocal.millimetres(symbols, 1.0f));
+                    nativeSetNoLocalContrast(Settings.get(ModuleSettings.SOFT_LIGHT_NO_LOCAL_CONTRAST));
                 }
             }));
+        for (String stage : new String[] {"FilterPresenter.apply", "FilterPresenter.captureRequest"}) {
+            Log.guard(TAG, "soft light mode at " + stage, () -> XposedBridge.hookMethod(symbols.method(stage), new XC_MethodHook() {
+                @Override protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                    nativeSetMasterMode(FilterScope.MASTER_MODE.equals(symbols.get("FeaturePresenter.modeName", param.thisObject)));
+                }
+            }));
+        }
         Log.guard(TAG, "soft light focal length", () -> XposedBridge.hookMethod(symbols.method("Zoom.setZoom"), new XC_MethodHook() {
             @Override protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                 nativeSetFocal(ZoomFocal.millimetres(symbols, (Float) param.args[0]));

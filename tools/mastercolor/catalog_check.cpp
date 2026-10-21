@@ -32,9 +32,10 @@ int main(int argc, char **argv) {
         }
         key.path = mastercolor::Path::Main;
         key.luxBlend = false;
-        std::vector<float> lut;
-        if (!mastercolor::bake(key, lut, 8)) { std::fprintf(stderr, "bake failed: %s\n", line.c_str()); return 1; }
-        for (float v : lut) if (!std::isfinite(v) || v < 0 || v > 1) return 1;
+        std::vector<std::vector<float>> tables;
+        if (!mastercolor::lookTables(key, tables, 8)) { std::fprintf(stderr, "bake failed: %s\n", line.c_str()); return 1; }
+        for (const auto &t : tables) for (float v : t) if (!std::isfinite(v) || v < 0 || v > 1) return 1;
+        const std::vector<float> &lut = tables[0];
         std::ofstream out(std::string(argv[3]) + "/" + stem + ".f32", std::ios::binary);
         for (int b : axis) for (int g : axis) for (int r : axis) for (int c = 0; c < 3; ++c) {
             float v = lut[size_t(c)*64*64*64 + (b*64+g)*64+r];

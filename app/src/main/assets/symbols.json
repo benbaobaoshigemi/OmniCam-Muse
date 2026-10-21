@@ -216,6 +216,129 @@
     "Landroid/animation/ValueAnimator;->cancel()V"
    ]
   },
+  "ControlUi.hideControls": {
+   "kind": "method",
+   "in": "@ControlUi",
+   "params": [
+    "boolean"
+   ],
+   "ret": "void",
+   "invokes": [
+    "Lcom/oplus/camera/control/MainShutterButton;->setVisibility(I)V",
+    "Landroid/view/View;->clearAnimation()V",
+    "Lcom/oplus/camera/control/ShutterButton;->setVisibility(I)V"
+   ]
+  },
+  "ControlUi.mainShutterAnimated": {
+   "kind": "method",
+   "in": "@ControlUi",
+   "params": [
+    "int",
+    "int",
+    "int",
+    null,
+    "android.view.animation.PathInterpolator"
+   ],
+   "ret": "void"
+  },
+  "ControlUi.thumbnailAnimated": {
+   "kind": "method",
+   "in": "@ControlUi",
+   "params": [
+    "int",
+    "int",
+    "android.view.animation.Interpolator",
+    "int",
+    "boolean"
+   ],
+   "ret": "void"
+  },
+  "ControlUi.mainShutter": {
+   "kind": "method",
+   "in": "@ControlUi",
+   "params": [
+    "int",
+    "int"
+   ],
+   "ret": "void",
+   "calledBy": [
+    "@ControlUi.hideControls"
+   ],
+   "invokes": [
+    "@ControlUi.mainShutterAnimated"
+   ]
+  },
+  "ControlUi.thumbnail": {
+   "kind": "method",
+   "in": "@ControlUi",
+   "params": [
+    "int",
+    "int"
+   ],
+   "ret": "void",
+   "calledBy": [
+    "@ControlUi.hideControls"
+   ],
+   "invokes": [
+    "@ControlUi.thumbnailAnimated"
+   ]
+  },
+  "ControlUi.sideButtonAnimated": {
+   "kind": "method",
+   "in": "@ControlUi",
+   "params": [
+    "int",
+    "int",
+    null,
+    "int"
+   ],
+   "ret": "void"
+  },
+  "ControlUi.switchCamera": {
+   "kind": "method",
+   "in": "@ControlUi",
+   "params": [
+    "int",
+    "int"
+   ],
+   "ret": "void",
+   "calledBy": [
+    "@ControlUi.hideControls"
+   ],
+   "invokes": [
+    "@ControlUi.sideButtonAnimated"
+   ]
+  },
+  "ControlUi.sideShutter": {
+   "kind": "method",
+   "in": "@ControlUi",
+   "params": [
+    "int"
+   ],
+   "ret": "void",
+   "calledBy": [
+    "@ControlUi.hideControls"
+   ]
+  },
+  "ControlUi.sideShutterEnabled": {
+   "kind": "method",
+   "in": "@ControlUi",
+   "params": [
+    "boolean"
+   ],
+   "ret": "void",
+   "calledBy": [
+    "@ControlUi.hideControls"
+   ]
+  },
+  "ControlUi.sideShutterView": {
+   "kind": "field",
+   "in": "@ControlUi",
+   "type": "com.oplus.camera.control.ShutterButton",
+   "readBy": [
+    "@ControlUi.sideShutterEnabled"
+   ]
+  },
   "GrViewManager": {
    "kind": "class",
    "strings": [
@@ -2164,6 +2287,362 @@
     "int"
    ],
    "ret": "void"
+  },
+  "FilterMenu": {
+   "kind": "class",
+   "strings": [
+    "showPaletteFilterPanel, menu not ready"
+   ]
+  },
+  "FilterMenu.show": {
+   "kind": "method",
+   "in": "@FilterMenu",
+   "params": [
+    "java.lang.String",
+    "boolean"
+   ],
+   "ret": "void",
+   "strings": [
+    "showFilterPanel"
+   ]
+  },
+  "FilterMenu.hideAnimated": {
+   "kind": "method",
+   "in": "@FilterMenu",
+   "params": [
+    "boolean"
+   ],
+   "ret": "void",
+   "strings": [
+    "hideAnimator"
+   ]
+  },
+  "FilterPresenter.showMenu": {
+   "kind": "method",
+   "in": "@FilterPresenter",
+   "params": [
+    "boolean"
+   ],
+   "ret": "void",
+   "invokes": [
+    "@FilterMenu.show"
+   ]
+  },
+  "BeautyUi": {
+   "kind": "class",
+   "strings": [
+    "openFaceBeautyMenu, view: "
+   ]
+  },
+  "BeautyUi.openMenu": {
+   "kind": "method",
+   "in": "@BeautyUi",
+   "params": [
+    "int",
+    "boolean",
+    "boolean",
+    "boolean"
+   ],
+   "ret": "void",
+   "strings": [
+    "openFaceBeautyMenu, view: "
+   ]
+  },
+  "EffectPanelUi.expand": {
+   "kind": "method",
+   "params": [
+    "java.lang.String"
+   ],
+   "ret": "void",
+   "invokes": [
+    "Lcom/oplus/camera/protocal/event/message/uiProtocol/effectpanel/EventMessageEffectMenuStatus;-><init>(Ljava/lang/String;Ljava/lang/String;)V"
+   ]
+  },
+  "EffectPanelUi": {
+   "kind": "class",
+   "ownerOf": "@EffectPanelUi.expand"
+  },
+  "EffectPanelUi.collapse": {
+   "kind": "method",
+   "in": "@EffectPanelUi",
+   "params": [
+    "java.lang.String",
+    "boolean",
+    "boolean"
+   ],
+   "ret": "void",
+   "invokes": [
+    "Lcom/oplus/camera/protocal/event/message/uiProtocol/effectpanel/EventMessageEffectMenuStatus;-><init>(Ljava/lang/String;Ljava/lang/String;)V"
+   ]
+  },
+  "EffectPanelBase": {
+   "kind": "class",
+   "superOf": "@EffectPanelUi"
+  },
+  "EffectPanelBase.revoke": {
+   "kind": "method",
+   "in": "@EffectPanelBase",
+   "params": [
+    "com.oplus.camera.protocal.event.message.uiProtocol.RevokeMessage"
+   ],
+   "ret": "void"
+  },
+  "FilterMenu.setListener": {
+   "kind": "method",
+   "in": "@FilterMenu",
+   "name": "setFilterEffectMenuListener"
+  },
+  "FilterMenuListener": {
+   "kind": "class",
+   "paramOf": [
+    "@FilterMenu.setListener",
+    0
+   ]
+  },
+  "FilterStrip.setCallback": {
+   "kind": "method",
+   "name": "setScrollBarTextureViewCallback"
+  },
+  "FilterStrip": {
+   "kind": "class",
+   "ownerOf": "@FilterStrip.setCallback"
+  },
+  "FilterStrip.indexAt": {
+   "kind": "method",
+   "in": "@FilterStrip",
+   "params": [
+    "float"
+   ],
+   "ret": "int",
+   "abstract": true
+  },
+  "FilterMenu.strip": {
+   "kind": "field",
+   "in": "@FilterMenu",
+   "type": "@FilterStrip"
+  },
+  "FilterStripCallback": {
+   "kind": "class",
+   "ifaces": [
+    "@FilterStripCallbackType"
+   ]
+  },
+  "FilterStripCallbackType": {
+   "kind": "class",
+   "paramOf": [
+    "@FilterStrip.setCallback",
+    0
+   ]
+  },
+  "FilterStripCallback.select": {
+   "kind": "method",
+   "in": "@FilterStripCallback",
+   "params": [
+    "int",
+    "boolean"
+   ],
+   "ret": "void"
+  },
+  "FilterMenuListener.current": {
+   "kind": "method",
+   "in": "@FilterMenuListener",
+   "params": [],
+   "ret": "int"
+  },
+  "FilterMenuListener.inRange": {
+   "kind": "method",
+   "in": "@FilterMenuListener",
+   "params": [
+    "int"
+   ],
+   "ret": "boolean",
+   "calledBy": [
+    "@FilterStripCallback.select"
+   ]
+  },
+  "FilterMenuListener.select": {
+   "kind": "method",
+   "in": "@FilterMenuListener",
+   "params": [
+    "int",
+    "boolean"
+   ],
+   "ret": "void",
+   "calledBy": [
+    "@FilterStripCallback.select"
+   ]
+  },
+  "FilterStripHost": {
+   "kind": "class",
+   "ifaces": [
+    "@FilterMenuListener"
+   ]
+  },
+  "FilterStripHost.current": {
+   "kind": "method",
+   "in": "@FilterStripHost",
+   "overrideOf": "@FilterMenuListener.current"
+  },
+  "FilterStripHost.inRange": {
+   "kind": "method",
+   "in": "@FilterStripHost",
+   "overrideOf": "@FilterMenuListener.inRange"
+  },
+  "FilterStripHost.select": {
+   "kind": "method",
+   "in": "@FilterStripHost",
+   "overrideOf": "@FilterMenuListener.select"
+  },
+  "FilterPresenter.menus": {
+   "kind": "field",
+   "in": "@FilterPresenter",
+   "name": "P"
+  },
+  "FilterMenuHolder": {
+   "kind": "class",
+   "typeOf": "@FilterPresenter.menus"
+  },
+  "FilterMenuHolder.menu": {
+   "kind": "method",
+   "in": "@FilterMenuHolder",
+   "params": [],
+   "ret": "@FilterMenu"
+  },
+  "FilterMenuHolder.title": {
+   "kind": "method",
+   "in": "@FilterMenuHolder",
+   "params": [
+    "java.lang.String"
+   ],
+   "ret": "void"
+  },
+  "FilterPresenter.reloadStrip": {
+   "kind": "method",
+   "in": "@FilterPresenter",
+   "params": [],
+   "ret": "void",
+   "strings": [
+    "pref_filter_process_key",
+    "macro"
+   ],
+   "invokes": [
+    "Lcom/oplus/camera/filter/FilterHelper;->setImageResource(Landroid/content/res/Resources;Ljava/lang/String;IIZZZZLjava/util/List;Lcom/oplus/camera/filter/FilterHelper$ImageCallback;Landroid/util/Size;ZZZZZLjava/lang/String;Z)V"
+   ]
+  },
+  "FilterPresenter.palette": {
+   "kind": "method",
+   "in": "@FilterPresenter",
+   "name": "X3",
+   "params": [],
+   "ret": "boolean"
+  },
+  "FilterPresenter.styleMode": {
+   "kind": "method",
+   "in": "@FilterPresenter",
+   "name": "O3",
+   "params": [],
+   "ret": "boolean"
+  },
+  "FilterPresenter.styleTarget": {
+   "kind": "field",
+   "in": "@FilterPresenter",
+   "name": "t1",
+   "type": "int"
+  },
+  "FilterPresenter.paletteList": {
+   "kind": "field",
+   "in": "@FilterPresenter",
+   "name": "M0",
+   "type": "boolean"
+  },
+  "FilterPresenter.clampStyle": {
+   "kind": "method",
+   "in": "@FilterPresenter",
+   "params": [
+    "int",
+    "int"
+   ],
+   "ret": "boolean",
+   "fields": [
+    "@FilterPresenter.styleTarget"
+   ]
+  },
+  "FilterPresenter.storeStyle": {
+   "kind": "method",
+   "in": "@FilterPresenter",
+   "name": "p4",
+   "params": [
+    "int"
+   ],
+   "ret": "void"
+  },
+  "FilterPresenter.applyFilter": {
+   "kind": "method",
+   "in": "@FilterPresenter",
+   "params": [
+    "int"
+   ],
+   "ret": "void",
+   "invokes": [
+    "@FilterPresenter.select",
+    "Lcom/oplus/camera/common/thread/ThreadManager;->m(Ljava/lang/Runnable;)V"
+   ]
+  },
+  "FilterPresenter.styleCurrent": {
+   "kind": "method",
+   "in": "@FilterPresenter",
+   "params": [],
+   "ret": "int",
+   "invokes": [
+    "@FilterPresenter.currentIndex",
+    "Lcom/oplus/camera/data/DataManager;->b(Lcom/oplus/camera/data/DataKey;Ljava/lang/Object;)Ljava/lang/Object;"
+   ]
+  },
+  "FilterPresenter.styleFilter": {
+   "kind": "method",
+   "in": "@FilterPresenter",
+   "params": [],
+   "ret": "int",
+   "strings": [
+    "com.oplus.camera.feature.capture_params"
+   ],
+   "invokes": [
+    "@FilterPresenter.styleCurrent",
+    "Ljava/lang/Math;->max(II)I"
+   ]
+  },
+  "FilterPresenter.syncPalette": {
+   "kind": "method",
+   "in": "@FilterPresenter",
+   "params": [],
+   "ret": "void",
+   "invokes": [
+    "@FilterPresenter.palette",
+    "@FilterMenuHolder.title"
+   ]
+  },
+  "StylePager": {
+   "kind": "class",
+   "strings": [
+    "FilterViewManager",
+    "800t_master.bin"
+   ]
+  },
+  "FilterPresenter.pager": {
+   "kind": "field",
+   "in": "@FilterPresenter",
+   "type": "@StylePager"
+  },
+  "StylePager.sync": {
+   "kind": "method",
+   "in": "@StylePager",
+   "params": [
+    "int",
+    "int",
+    "int",
+    "boolean"
+   ],
+   "ret": "void"
   }
  },
  "gallery": {
@@ -2219,11 +2698,12 @@
     "AssetStyleFileSource(assetName='"
    ]
   },
-  "FileStyleSource": {
-   "kind": "class",
-   "strings": [
-    "FileStyleSource(filePath='"
-   ]
+  "AssetStyleSource.open": {
+   "kind": "method",
+   "in": "@AssetStyleSource",
+   "name": "getInputStream",
+   "params": [],
+   "ret": "java.io.InputStream"
   },
   "StyleSource": {
    "kind": "class",
@@ -2261,8 +2741,10 @@
   "Section.segmentSetup": {
    "kind": "method",
    "in": "com.oplus.gallery.photoeditor.editingvvm.watermarkCamera.WatermarkCameraSection",
-   "strings": [
-    "null cannot be cast to non-null type com.coui.appcompat.segmentbutton.COUISegmentButtonLayout"
+   "params": [],
+   "ret": "void",
+   "fields": [
+    "Lcom/oplus/gallery/photoeditor/R$layout;->picture3d_editor_watermark_camera_type_segment:I"
    ]
   },
   "Section.onCreate": {

@@ -57,6 +57,17 @@ public final class Reflection {
         throw new IllegalStateException("DataKey not found: " + preferenceName);
     }
 
+    /** The feature key constant (a static field of {@code keyType} in {@code holder}) whose name is {@code name}. */
+    public static Object findFeatureKey(Class<?> holder, Class<?> keyType, String name) throws IllegalAccessException {
+        for (Field field : holder.getDeclaredFields()) {
+            if (!Modifier.isStatic(field.getModifiers()) || field.getType() != keyType) continue;
+            field.setAccessible(true);
+            Object key = field.get(null);
+            if (key != null && hasStringField(key, name)) return key;
+        }
+        throw new IllegalStateException("feature key not found: " + name);
+    }
+
     /** First non-null instance field whose declared type has the given class name. */
     public static Object findFieldByType(Object object, String typeName) throws IllegalAccessException {
         if (object == null) return null;

@@ -45,6 +45,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import local.jiege.settings.DiagnosticsContract
+import local.jiege.settings.ModuleSettings
 import local.jiege.settings.MasterFilterContract
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
@@ -222,6 +223,7 @@ private fun InjectionCard(state: InjectionHolder, cardModifier: Modifier) {
 @Composable
 internal fun LogScreen(padding: PaddingValues, nestedScroll: NestedScrollConnection) {
     val context = LocalContext.current
+    val store = remember(context) { SettingsStore(context) }
     val scope = rememberCoroutineScope()
     val cardModifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp)
     var recording by remember { mutableStateOf<Boolean?>(null) }
@@ -244,6 +246,17 @@ internal fun LogScreen(padding: PaddingValues, nestedScroll: NestedScrollConnect
         modifier = Modifier.fillMaxSize().overScrollVertical().nestedScroll(nestedScroll),
         contentPadding = PaddingValues(top = padding.calculateTopPadding() + 12.dp, bottom = padding.calculateBottomPadding()),
     ) {
+        item(key = "capture_dumps") {
+            SmallTitle(text = "成片转储")
+            Card(modifier = cardModifier) {
+                SettingSwitch(store = store, key = ModuleSettings.DUMP_RAW, title = "RAW 转储",
+                    summary = "HybridRaw 输入的逐帧 RAW，保留原始打包格式")
+                SettingSwitch(store = store, key = ModuleSettings.DUMP_CCM, title = "ccmVec 转储",
+                    summary = "原厂白平衡与 CCM 之后、gamma 之前的线性 RGB")
+                SettingSwitch(store = store, key = ModuleSettings.DUMP_HDRT, title = "HDRTransform 转储",
+                    summary = "大师主图和快图的 HDR 输入、SDR 输出")
+            }
+        }
         item(key = "log") {
             Card(modifier = cardModifier) {
                 SwitchPreference(

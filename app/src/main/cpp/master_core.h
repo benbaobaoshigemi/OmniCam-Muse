@@ -52,13 +52,18 @@ bool bake(const Key &key, std::vector<float> &lut, int threads);
 
 constexpr int kStockTables = 6;   // LMTLut0..5: the stock master LMT interpolates them by scene level
 
-// Blend mode. `look` is the baked look table (bake(key) with the weights ignored). Splits it and each
+// The look's tables: one baked table, or kStockTables slot tables for a look that keeps the stock
+// per-frame selection (x8u: another model's stock master LMTs).
+bool lookTables(const Key &key, std::vector<std::vector<float>> &tables, int threads);
+
+// Blend mode. `looks` are the look's tables (lookTables(key) with the weights ignored), one for every
+// slot or one per slot. Splits the slot's look table and each
 // stock table stockDir/LMTLut<i> into tone (the neutral-axis curve, as a function of the scene luma of
 // the input code) and colour (per-channel ratio to that curve), both in linear light of the HLG output,
 // then recombines tone^(1-wt)*look^wt and colour likewise. Weights 1/1 give the look, 0/0 the stock table.
 // Tone is a scalar, so it never changes the chromaticity; colour carries hue, saturation and the
 // colour-dependent brightness. tools/mastercolor/blend_check.cpp / .py check it on a host.
-bool blendWithStock(const Key &key, const std::vector<float> &look, const std::string &stockDir,
+bool blendWithStock(const Key &key, const std::vector<std::vector<float>> &looks, const std::string &stockDir,
                     std::vector<std::vector<float>> &tables, int threads);
 
 // Serialised key for the preview directory (written by the Java side, read here).

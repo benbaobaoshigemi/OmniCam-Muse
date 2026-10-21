@@ -8,6 +8,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # LSPosed entry point and routes library-load callbacks to the feature files.
 add_library(jiege_native SHARED
     native_entry.cpp
+    capture_dump.cpp
+    raw_dump.cpp
+    ccm_dump.cpp
+    hdrt_dump.cpp
     gr_basictone.cpp
     pop_path_remap.cpp
     natural_mode.cpp

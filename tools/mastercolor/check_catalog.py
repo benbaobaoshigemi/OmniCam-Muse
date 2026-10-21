@@ -27,7 +27,7 @@ def validate():
     assert array(source, "FILM_IDS") == [f["id"] for f in catalog["films"]]
     assert array(source, "PRINT_IDS") == [""] + [p["id"] for p in catalog["prints"]]
     assert array(source, "FILM_DEFAULT_PRINTS") == [f["defaultPrint"] or "" for f in catalog["films"]]
-    names = ["hncs", "hncs_standard_reproduction", "hncs_reproduction_standard", "hncs_reproduction_reproduction", "leica_m9", "x7u", "agx", "sigmoid", "filmic"]
+    names = ["hncs", "hncs_standard_reproduction", "hncs_reproduction_standard", "hncs_reproduction_reproduction", "leica_m9", "x8u", "x7u", "agx", "sigmoid", "filmic"]
     for prefix, group in [("lumix_", "LUMIX_IDS"), ("canon_", "CANON_IDS")]:
         names += [prefix + v for v in array(source, group)]
     names += ["basic_" + v for v in array(source, "BASIC_IDS")]
@@ -42,6 +42,10 @@ def validate():
     references = set()
     for name in names:
         if name == "hncs": continue
+        if name == "x8u":
+            assert sorted(p.name for p in (LOOKS / "x8u").iterdir()) == ["LMTLut%d" % i for i in range(4)]
+            assert all(p.stat().st_size == 3*64**3*4 for p in (LOOKS / "x8u").iterdir())
+            continue
         path = LOOKS / (name + (".lmt" if name == "x7u" else ".bin"))
         assert path.is_file(), path
         if name == "x7u":
@@ -95,7 +99,7 @@ def parity(names):
         tokens = line.split()
         name, param = tokens[0], [float(t) for t in tokens[1:]] or None
         stem = "_".join(tokens)
-        if name == "x7u": continue
+        if name in ("x8u", "x7u"): continue
         if name == "hncs" or name.startswith("hncs_"):
             import hncs_engine as E
             engine = E.Engine(5000)

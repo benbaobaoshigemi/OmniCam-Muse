@@ -16,7 +16,7 @@ Find X9 Ultra（PMA110，相机 7.006.103）上各项功能的原理与涉及文
 
 理光模式的照片尾部有 `gr.effect.info`（GRInfo，13 个 float），水印样式为 `gr_style_N`。相册编辑器只在照片解析出 GRInfo 且 `feature_is_camera_gr_supported` 为真时提供理光水印，而扩展信息解析（符号 `Extend.parse`）只在水印品牌含 realme（符号 `Brand.isRealme`）时读 GRInfo；本机照片的品牌是 OPPO。`GrGalleryWatermark` 在解析带 `gr.effect.info` 的照片期间让品牌判断返回真，其余照片不受影响。
 
-理光水印使用独立的开关 `pref_watermark_gr_capture_switch_key`。`GrCameraWatermark` 在拍摄水印判断期间将照片水印的读取指向理光开关；设置页的水印摘要在理光模式下也读取该开关。`GrModeHooks` 的模式进入调用 `BaseMode.onStart()`，保留理光水印状态；相机传给相册的空样式代表关闭，编辑页保留该空值。
+理光水印使用独立的开关 `pref_watermark_gr_capture_switch_key`。`GrCameraWatermark` 在拍摄水印判断期间将照片水印的读取指向理光开关；理光水印与普通照片水印分区存储：理光模式下只写理光开关与限定模式样式键，其他模式下只写普通水印开关与照片样式键（相机切换理光开关时的联动、相册水印页回传广播都会改写另一侧，在 `DataManager.put/putSync` 处丢弃）；设置页的水印摘要与水印页打开时的照片页一致：理光模式读理光开关，其他模式读普通照片水印（开关为 on 且有样式），不计视频水印。`GrModeHooks` 的模式进入调用 `BaseMode.onStart()`，保留理光水印状态；相机传给相册的空样式代表关闭，编辑页保留该空值。
 
 ## 大师水印的滤镜名
 
@@ -77,6 +77,10 @@ Ultra HDR 拍摄后走“无缝 UI”路径：`PreviewRenderer.setSeamlessGaussi
 
 ## 注入状态与日志导出
 
+PMA110 的 HDRTransform 输入虽然称为 P010，实拍转储中的 10 位值放在 uint16 的低位；离线读取不能直接套用标准 P010 的右移 6 位处理。
+
+日志页的“成片转储”提供 RAW、ccmVec、HDRTransform 三个独立开关，默认关闭；更改后重启相机进程生效。文件保存在 `/sdcard/Android/data/com.oplus.camera/files/muse/dumps/`，按阶段与时间分目录，每组附带 `info.json`：`raw/` 保存 HybridRaw 的 PickFrame 读取的逐帧传感器缓冲及其打包格式、行跨度、黑电平；`ccm/` 在同帧输入上运行原厂 ProProc 的白平衡与 CCM 前缀，将 gamma 之前的 `ccmVec` 写为 RGB 交错、小端 float32，不改变原厂输出；`hdrtransform/` 保存大师主图和快图的输入 P010 与输出 NV21。读取 YUV 时按元数据中的行跨度、slice height 和有效宽高去掉对齐区域。三类全开时，5000 万像素拍摄一次约占 1.08 GB，并增加拍摄处理时间。
+
 相机看不到设置应用（包可见性），所以由应用来问：`call(com.oplus.camera.entry, "jiege.diagnostics")` 落到相机导出的 `EntryProvider.call`，钩子（`hook/common/Diagnostics.java`）只对模块 uid 返回状态：符号解析数、缺失数、错误行数、进程启动时间、加载钩子的模块 APK、最近 600 行模块日志，以及相机的大师滤镜原厂列表（应用存进 `MasterFilterStore`）。调用会在相机未运行时拉起相机进程。`Log.e` 计入错误数。
 
 主页状态（`ui/Diagnostics.kt`）：LSPosed（xposedsharedprefs 可用）、KSU 模块（`/odm/lib64/libAlgoInterface.so` 与 `/odm/lib64` 不在同一设备，即绑定挂载生效）、相机注入、符号匹配、功能加载。全部正常时状态卡为绿色；相机仍跑着旧模块 APK 时为橙色，提示重启相机；其余异常为红色。“重启相机”“重启相册”用 `su -c am force-stop` 后重新打开，没有 Root 授权时打开应用信息页。主页的“日志”是二级页：“开启日志”用 Root 起一个 logcat 写入应用缓存（两个 8 MiB 轮转文件），关闭时停止并保留；“导出日志”写一个 zip：概要、相机状态与日志、模块设置（授权码只标记已保存）、大师滤镜配置、应用自身 logcat，有 Root 时加 LSPosed 模块日志、logcat 与记录下的日志。
@@ -97,6 +101,8 @@ GR 模式向相机的播放器请求自己的音效（14 快门，15/16 长曝�
 
 替换在“拍摄 → 实验性功能 → 物理柔光”二级页里按挡开关（`soft_light_weak_hdf`、`soft_light_medium_black_mist`、`soft_light_strong_white_mist`，默认关），相机打开（变焦条创建）时以位掩码读入原生层，未开的挡走原厂。弱档为 HDF、中档为 1/4 黑柔、强档为白柔：`soft_light.cpp` 在调用期间关掉原厂 ProMist，让美摄渲染滤镜的其余部分，再对输出做光学散射：按大师管线的中性色调曲线（内置 gamma 表加六张原厂 LMT 灰轴的平均，逐通道；`soft_light_curve.h`，由 `tools/softlight/gen_curve.py` 生成）把 HLG 信号反解回场景光（18% 灰 = 0.18，传感器削顶约灰上 5.9 档），13 抽头降采样金字塔与逐级帐篷上采样链，每级每通道的权重来自物理光学模拟的蒸馏（`soft_light_weights.h`，由 `tools/softlight/gen_weights.py` 从工作区 `实验\柔光替换\pyramid_weights.json` 生成），HDF 散射约 20%（皮升墨滴，覆盖率 10%，集中在 0.6° 以内；HDF 属于 GR 的 28 mm 镜头，光晕按 28 mm 视场计算、不随变焦变化，黑柔与白柔随当前焦距）、黑柔约 15%（多在 0.3–1.3° 的光晕里，另吸收 18%，按透过率补回）、白柔约 26%（七成在 3° 以外，成乳白雾），Hybrid Raw 里已削顶的光源比记录值亮（RAWMax 台灯按削顶最少的通道至少 1.8 倍），HDF 按 2.6 倍真实亮度处理：接近削顶的像素送入金字塔前按峰值通道放大（削顶下 0.5 档起线性升到 2.6），周围约 0.1° 的平均亮度在削顶下 0.3 档以内时直透光也放大到 2.6 倍（按邻域均值判断，纹理不被拉开），压肩把光源压成一片白；光晕由光源的真实亮度撑起，散射比例因此只需约 20%，画面其余部分不发雾。黑柔与白柔的削顶像素按记录值散射：大师帧里被照亮的白色表面也会削顶，经宽光晕放大会像光源一样发光。超出传感器削顶的光按峰值通道软压肩，再按同一条曲线编码回 HLG。预览在美摄的 GL 上下文里跑，保存并恢复 GL 状态；成片在 CPU 上算同一套金字塔，把每个像素编码值的变化量加回 P010（色度按 2×2 平均），未散射处保持原值。
 
+“关闭对比度增强”（`soft_light_no_local_contrast`，默认关闭）在大师模式使用已替换的柔光挡位时，让 HDRTransform 的 `TmcDownTransEF::odtFusionPro` 直接复制全局影调结果，省去局部细节融合；其余模式保持原厂路径。开关在重启相机后生效。
+
 光晕是镜头前的角度，在画面里随焦距缩放：Java 侧（`softlight/SoftLight.java`）在变焦条创建时报 1x、`Zoom.setZoom` 时报当前变焦对应的等效焦距（`common/ZoomFocal.java`，按相机配置的变焦档位插值），原生侧按 log₂(焦距像素数) 在权重表里插值；超出表尾时金字塔基准每倍焦距上移一级。
 
 ## 大师调节栏的颗粒
@@ -113,8 +119,24 @@ GR 模式向相机的播放器请求自己的音效（14 快门，15/16 长曝�
 
 ## 大师 LUT 槽与对比度
 
-原厂大师 BasicTone 每帧把风格 LMT、SC（影调 Cont、饱和度 Sat）、CWCM（冷暖 CoWa、青品 CyMa）合成一张表：`CWCM(SC(LMT(x)))`，成片之后再接 ODT（开启时）与暗角，预览无 ODT。模块加两个槽，合成变为 `Post(CWCM(SC(Pre(LMT(x)))))`：Pre 放塑形类（对比度，以后的高光／暗部亮度），Post 放着色类（以后的分离色调、彩色 Fx 蓝、片基），恒等时不改任何调用。各槽是有序的阶段列表，阶段直接作用在原厂表的格点值上。
+原厂大师 BasicTone 每帧把风格 LMT、SC（影调 Cont、饱和度 Sat）、CWCM（冷暖 CoWa、青品 CyMa）合成一张表：`CWCM(SC(LMT(x)))`，成片之后再接 ODT（开启时）与暗角，预览无 ODT。模块加两个槽，合成变为 `Post(CWCM(SC(Pre(LMT(x)))))`：Pre 放塑形类（对比度，以后的高光／暗部亮度），Post 放着色类（彩色 Fx 蓝，以后的分离色调、片基），恒等时不改任何调用。各槽是有序的阶段列表，阶段直接作用在原厂表的格点值上。
 
 - native：`app/src/main/cpp/master_lut_slots.cpp`。成片挂 `libBasicTonePhotoX9.so` 的 `BasicTone::MergeLutTet_resize` 与 `BasicTone_OGL::load3DLut<half>`，按源表是否为 LMT（`this+0xd48`）、查找表是 SC∘CWCM（`+0xd58`）还是 ODT（`+0xd50`）分情况套 Pre／Post；只作用于大师帧（`basicToneMasterFrame()`，由 `gr_basictone.cpp` 的 processCore 钩子按帧标记）。预览挂 `libCombineLut.so` 的 `MergeLutTet_resize2rgb`（四线程分段）；原厂四项调节全为 0 时不调用合成，由 Java 侧对返回表套 `Post(Pre())`。
 - Java：`hook/masterlut/MasterLutSlots.java` 传参数、按 `Lut3d.load` 的模式名标记大师预览、参数变化时同步调用 `Lut3d.update` 重算预览表（与原厂调节一致，拖动实时生效）。
 - 对比度：`hook/masterlut/MasterContrast.java`。条目插在影调之后，用原厂影调图标；影调改用理光影调图标 `gr_mode_effect_tone_icon`。量程 −100..100（`EffectMenu.bipolar`），全局持久化、不进预设，重置归 0。效果为理光对比度：理光 SC 表 Sat=0 一列 Lut3／Lut4／Lut5，按 `fuseUtilLut` 的方式在节点间线性插值。
+- 彩色 Fx 蓝：`app/src/main/cpp/master_fx_blue.h`，Post 槽，参数 `MasterLutSlots.Param.FX_BLUE` 0..100（富士弱／强约 50／100）。在 Oklab 里给饱和的蓝加密度：L × (1 − 0.15w)、C × (1 + 0.40w)，色相不变；权重 w = 色相（228°–270° 满，青侧到 190°、紫侧到 295° 余弦归零）× 饱和度 C/L（0.02→0.10，再陡会把色度噪声放大成明暗斑驳）× 明度（L 0.05→0.30）；C/L 0.15→0.35 时彩度增益退掉，已很鲜艳的蓝只加密度；出 P3 色域时在新明度上二分收彩度。离线测试 `tools/offline_tests/run_native.ps1`（主机 MSVC）。
+
+## 快速切换滤镜面板
+
+大师模式的右下入口（单击打开预设卡片）和带调色盘的模式的右下入口（单击打开调色盘），按设置“拉起快速切换滤镜面板”（`filter_panel_trigger`：无 / 上滑（默认）/ 长按）弹出原厂旧滤镜条，即移轴模式单击打开的 `effects_menu_panel`；单击不变。`hook/filterpanel/LegacyFilterPanel` 在 `MenuRightButton`（`camera_menu_right_enter_button`）上挂长按与触摸监听。上滑沿手机长边朝顶端（按屏幕旋转换算，横屏也一样），超过 24 dp 打开，并给按钮补发取消，单击与长按都不再触发。
+
+列表：卡片和调色盘页是 `FilterPresenter` 同一套“风格页”（`styleMode`）。大师模式是预设列表（自定义预设在前，之后每个可见滤镜一个内置预设，`MasterPresets`），调色盘是调色盘的滤镜。打开期间置调色盘列表标志（`FilterPresenter.paletteList`）；条目在 `FilterHelper.setImageResourceHorizontal` 处替换：大师模式按预设页构造，自定义预设显示预设名；名称同卡片：目录滤镜用目录标题，“无”显示为“标准”。滤镜条渲染器只在当前项变化时重画名称纹理（`FilterNameMarquee.updateMarqueeParams`），每次构建前把 `mCurFilterIndex` 置 -1。选中按卡片滑动的原厂顺序套用（`EffectStylePageIndicator` 消息 3：`clampStyle`、`beginPresetSwitch`、`storeStyle`、`applyFilter(styleFilter)`、`syncPalette`、`markPresetSwitchReady`、`StylePager.sync`），各页带着原位参数、自定义预设参数、调色盘与柔光记忆；滑动中同一帧的多次选中只套用停下的那一页。
+
+打开：
+- 有美颜功能的模式（拍照等）走移轴入口的原厂路径 `FaceBeautyUIManager.t(3)` → `FaceBeautyBaseMenu.C` → `BaseMode.C7` → `FilterPresenter.showMenu`，只在 `showMenu` 内让调色盘（`FilterPresenter.palette`）与大师卡片（`com.oplus.feature.effect.style.support`）答否，菜单就落到滤镜条；隐藏下方控件、点空白退出都由美颜菜单负责。美颜菜单对象随支持美颜的模式创建，换模式后可能残留，所以路径按模式选，不按对象是否存在。
+- 大师模式没有美颜功能。美颜菜单正是隐藏控件的一方（`t()` 末尾 `CameraUIManager.F9` → `CameraControlUI.Wg(true)`），也是点空白退出的一方（`TouchEventManager.d8` 只在 `EffectPanelUIContainer.isExpanded()` 为真时收起效果面板，而只有美颜菜单答真；滤镜菜单既不答也不处理 `w8`）。这里滤镜菜单直接显示滤镜条，效果面板展开 `pref_filter_menu`（`EffectPanelUi.expand`：收起模式栏与入口按钮），记下快门、缩略图、切换镜头、侧快门的可见性后调 `Wg(true)`。打开期间效果面板 `isExpanded()` 答真，收起消息（`EffectPanelBase.revoke`）让滤镜菜单 `hideAnimated(true)`。
+- 大师预览流是套大师色彩之前的 HDR 帧，缩略图会发灰，美摄菜单 SDK 还会对每一项走 HDR 路径。照原厂对 XPAN 的处理，打开期间新建的 `GLModelParam` 设 `setNeedBasicToneConvert(true)`，先用本模式的基础色调 LUT 转成 2D 纹理。
+
+绘制窗口：美摄菜单 SDK 每帧把所有条目画一遍，52 项时大师预览从 30 fps 降到约 20 fps（拍照模式约 26 fps，移轴原生面板不降）。渲染器可以只画一个下标区间（`MeisheRender.drawFiltersFrame` 的 start / end，-1, -1 为全部），SDK 自己的窗口（`mFilterItemDrawCount`，配置 `com.oplus.filter.item.draw.count`，本机未配）按 `rect.top` 找中心，而滤镜条沿 x 排列、`top` 相同，窗口会停在开头几项，不能用。打开期间按滤镜条滚动位置（SDK 绘制收到的 `mCurrPosition`，经 `FilterStrip.indexAt`）取居中项前后各 4 项作为区间。列表本身不动：渲染器按列表缓存每项资源、取第一项的圆角，内容一变就整体重建。
+
+结束：滤镜条容器进入 `FADING_OUT` / `HIDDEN`（`BottomEffectContainer.setVisibilityState`，覆盖所有隐藏路径），或相机自己显示菜单（面板开着时单击入口打开卡片或调色盘）。恢复调色盘列表标志；大师模式再把原来可见的控件经各自方法带 150 ms 动画放回（`ControlUi.mainShutter`、`thumbnail`、`switchCamera`、`sideShutter`、`sideShutterEnabled`），效果面板收起（`EffectPanelUi.collapse`，模式栏回来）。

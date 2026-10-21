@@ -64,6 +64,9 @@ constexpr float kSourceStops = 0.3f;  // the core gate opens over this many stop
 constexpr float kSourceGain = 2.6f;   // HDF: true light of a clipped source over its recorded value
 
 std::atomic<float> gFocalMm{0.0f};  // 0 until the zoom bar reports
+std::atomic<bool> gMasterMode{false};  // the camera is in 大师模式; every other mode keeps the stock path
+std::atomic<bool> gNoLocalContrast{false};  // setting: captures with a replaced soft light skip the fusion
+std::atomic<bool> gCaptureSoft{false};  // the capture HDRTransform is working on carries a replaced soft light
 std::atomic<int> gLevels{0};  // replaced levels, bit = ProMist type; a clear bit leaves the stock soft light
 
 // SMsEffectParam: the ProMist switch and type.
@@ -72,7 +75,7 @@ constexpr size_t kSoftType = 0x4c;
 
 const SoftFilter *filterFor(const void *param) {
     auto *p = static_cast<const uint8_t *>(param);
-    if (!p || !p[kSoftEnable]) return nullptr;
+    if (!p || !p[kSoftEnable] || !gMasterMode.load()) return nullptr;
     int32_t type;
     std::memcpy(&type, p + kSoftType, sizeof type);
     if (type < 0 || type > 2 || !(gLevels.load() & (1 << type))) return nullptr;
@@ -880,6 +883,7 @@ int hookHardwareBuffer(void *core, void *effect, const HardwareBufferInfo *in, u
                        const void *param, const void *metadata, int flags) {
     const SoftFilter *filter = filterFor(param);
     Transfer tr;
+    gCaptureSoft.store(filter != nullptr);
     if (!filter || !out || !out->buffer || !transferOf(uint32_t(out->transfer), tr)) {
         return origHardwareBuffer(core, effect, in, n, out, param, metadata, flags);
     }
@@ -901,9 +905,53 @@ int hookHardwareBuffer(void *core, void *effect, const HardwareBufferInfo *in, u
     return ret;
 }
 
+// ---- capture: HDRTransform's local fusion off -------------------------------------------------
+//
+// The quick image and the preview render the HLG frame through the master tone curve alone; the
+// main image goes through HDRTransform processMasterV2, whose TmcDownTransEF::odtFusionPro (at 1K)
+// takes the base from the tone-curve rendition and the detail of two pyramid levels from the
+// linear rendition. That adds about 8 % local contrast at 0.03-0.5 degree over the whole frame,
+// the scales the soft light lowers. With 关闭对比度增强 on and a replaced soft light the fused image is the tone-curve
+// rendition itself, so the main image renders as the preview does.
+//
+// static odtFusionPro(CLBuffer &bright, CLBuffer &dark, CLBuffer &out, bool, bool): bright feeds
+// buildPyramid, dark buildPyramidLaplacian.
+
+using OdtFusionPro = int (*)(void *bright, void *dark, void *out, bool, bool);
+using CopyTo = int (*)(const void *self, void *dst, const bool &blocking);
+// Both HDRTransform libraries carry their own copy; the main image uses the Camera one.
+template <int Lib>
+struct FusionHook {
+    static OdtFusionPro orig;
+    static CopyTo copyTo;
+    static int call(void *bright, void *dark, void *out, bool a, bool b) {
+        if (!gNoLocalContrast.load() || !gCaptureSoft.load() || !copyTo) return orig(bright, dark, out, a, b);
+        bool blocking = true;
+        int ret = copyTo(bright, out, blocking);
+        __android_log_print(ANDROID_LOG_INFO, TAG, "capture: HDRTransform local fusion off (lib %d, copy %d)", Lib, ret);
+        return 0;
+    }
+    static void install(HookFunction hook, const char *name, void *handle) {
+        copyTo = reinterpret_cast<CopyTo>(dlsym(handle, "_ZNK9framework3ocl8CLBuffer6copyToERS1_RKb"));
+        hookExport(hook, handle, "_ZN14TmcDownTransEF12odtFusionProERN9framework3ocl8CLBufferES3_S3_bb",
+                   reinterpret_cast<void *>(&call), reinterpret_cast<void **>(&orig), TAG);
+        __android_log_print(ANDROID_LOG_INFO, TAG, "odtFusionPro hooked in %s (copyTo %p)", name, reinterpret_cast<void *>(copyTo));
+    }
+};
+template <int Lib> OdtFusionPro FusionHook<Lib>::orig = nullptr;
+template <int Lib> CopyTo FusionHook<Lib>::copyTo = nullptr;
+
 }  // namespace
 
 void onLibraryLoadedForSoftLight(HookFunction hook, const char *name, void *handle) {
+    static bool fusionCamera = false, fusionQuick = false;
+    if (!fusionCamera && std::strstr(name, "libOPAlgoCamHDRTransformCamera.so")) {
+        fusionCamera = true;
+        FusionHook<0>::install(hook, name, handle);
+    } else if (!fusionQuick && std::strstr(name, "libOPAlgoCamHDRTransformQuick.so")) {
+        fusionQuick = true;
+        FusionHook<1>::install(hook, name, handle);
+    }
     // The camera and libAlgoInterface both dlopen the library; the exports are hooked once.
     static bool hooked = false;
     if (hooked || !std::strstr(name, "libmsnativefilter.so")) return;
@@ -918,6 +966,14 @@ extern "C" JNIEXPORT void JNICALL Java_local_jiege_hook_softlight_SoftLight_nati
     if (std::fabs(gFocalMm.exchange(millimetres) - millimetres) > 0.5f) {
         __android_log_print(ANDROID_LOG_INFO, TAG, "focal %.1f mm", double(millimetres));
     }
+}
+
+extern "C" JNIEXPORT void JNICALL Java_local_jiege_hook_softlight_SoftLight_nativeSetMasterMode(JNIEnv *, jclass, jboolean master) {
+    if (gMasterMode.exchange(master) != bool(master)) __android_log_print(ANDROID_LOG_INFO, TAG, "master mode %s", master ? "on" : "off");
+}
+
+extern "C" JNIEXPORT void JNICALL Java_local_jiege_hook_softlight_SoftLight_nativeSetNoLocalContrast(JNIEnv *, jclass, jboolean on) {
+    gNoLocalContrast.store(on);
 }
 
 extern "C" JNIEXPORT void JNICALL Java_local_jiege_hook_softlight_SoftLight_nativeSetLevels(JNIEnv *, jclass, jboolean weak,

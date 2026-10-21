@@ -39,7 +39,7 @@ internal fun LazyListScope.softLightItems(store: SettingsStore, cardModifier: Mo
         SmallTitle(text = "实验性功能")
         Card(modifier = cardModifier) {
             BasicComponent(
-                title = "物理柔光",
+                title = "大师物理柔光",
                 summary = replaced.ifEmpty { "未启用" },
                 endActions = { Icon(imageVector = MiuixIcons.Basic.ArrowRight, contentDescription = null, tint = MiuixTheme.colorScheme.onSurfaceVariantSummary) },
                 onClick = onOpen,
@@ -72,6 +72,16 @@ internal fun SoftLightScreen(padding: PaddingValues, nestedScroll: NestedScrollC
                 for ((key, level, filter) in LEVELS) {
                     SettingSwitch(store = store, key = key, title = "${level}挡换成${filter}模拟")
                 }
+            }
+        }
+        item(key = "fusion") {
+            Card(modifier = cardModifier) {
+                SettingSwitch(
+                    store = store,
+                    key = ModuleSettings.SOFT_LIGHT_NO_LOCAL_CONTRAST,
+                    title = "关闭对比度增强",
+                    summary = "获得更贴近物理的效果，但丢失部分通透度",
+                )
             }
         }
     }

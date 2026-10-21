@@ -53,8 +53,7 @@ import local.jiege.hook.filters.PresetSelection;
  * Trace: every write of the position and preset-key entries is logged with its writer (module or
  * camera, with the camera's call site), and each change of the selection inputs is logged once.
  *
- * A preset's key and filter type are read from its toString() ("mPresetKey=…, mPresetName='…',
- * mFilterType=…, mFilterNameResEntry=…"), not from obfuscated fields.
+ * Preset keys and filter types: MasterPresets.
  */
 final class MasterPresetListSync {
     private static final String TAG = "MasterFilter";
@@ -84,10 +83,11 @@ final class MasterPresetListSync {
         XposedBridge.hookMethod(symbols.method("EffectData.current"), new XC_MethodHook() {
             @Override protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
                 Object manager = param.thisObject;
+                MasterPresets.track(manager);
                 @SuppressWarnings("unchecked") LinkedList<Object> presets = (LinkedList<Object>) symbols.get("EffectData.presets", manager);
                 @SuppressWarnings("unchecked") List<String> types = (List<String>) filterTypes(symbols, manager, filterSource);
                 if (presets == null || types == null || types.isEmpty()) return;
-                int customCount = customCount(presets);
+                int customCount = MasterPresets.customCount(presets);
                 int expected = customCount + types.size();
                 if (presets.size() < expected) {
                     while (presets.size() > customCount) presets.removeLast();
@@ -111,27 +111,13 @@ final class MasterPresetListSync {
     /** Selection check right after a (re)build of the preset list, once the list is complete. */
     @SuppressWarnings("unchecked")
     private static void settleEarly(Symbols symbols, ClassLoader classLoader, Class<?> filterSource, Object manager) throws Throwable {
+        MasterPresets.track(manager);
         LinkedList<Object> presets = (LinkedList<Object>) symbols.get("EffectData.presets", manager);
         List<String> types = (List<String>) filterTypes(symbols, manager, filterSource);
         if (presets == null || types == null || types.isEmpty()) return;
-        int customCount = customCount(presets);
+        int customCount = MasterPresets.customCount(presets);
         if (presets.size() < customCount + types.size()) return;
         keepSelection(symbols, classLoader, presets, customCount, types, true);
-    }
-
-    /**
-     * The custom presets lead the list (keys custom_<n>). Counted from the list itself: the
-     * repository's custom list is filled only when the camera loads storage and misses presets
-     * imported or saved since.
-     */
-    private static int customCount(List<Object> presets) {
-        int count = 0;
-        for (Object preset : presets) {
-            String key = presetKey(preset);
-            if (key == null || !key.startsWith("custom_")) break;
-            count++;
-        }
-        return count;
     }
 
     /** Logs writes of the position and preset-key entries: who wrote what, from where. */
@@ -211,33 +197,13 @@ final class MasterPresetListSync {
         return null;
     }
 
-    /** Text between two labels of a preset's toString(), or null. */
-    private static String presetText(Object preset, String label, String next) {
-        String text = String.valueOf(preset);
-        int start = text.indexOf(label);
-        if (start < 0) return null;
-        start += label.length();
-        int end = text.indexOf(next, start);
-        return end < 0 ? null : text.substring(start, end);
-    }
-
-    private static String presetKey(Object preset) {
-        String key = presetText(preset, "{mPresetKey=", ", mPresetName='");
-        return key == null || "null".equals(key) ? null : key;
-    }
-
-    private static String presetFilterType(Object preset) {
-        String type = presetText(preset, "', mFilterType=", ", mFilterNameResEntry=");
-        return type == null || "null".equals(type) ? null : type;
-    }
-
     private static void deletePresetsOfRemovedImports(final Symbols symbols, final Object manager, List<Object> presets) {
         List<String> removed = MasterFilterSync.takeRemovedImports();
         if (removed.isEmpty()) return;
         final List<String> keys = new ArrayList<>();
         for (Object preset : presets) {
-            String key = presetKey(preset);
-            if (key != null && key.startsWith("custom_") && removed.contains(presetFilterType(preset))) keys.add(key);
+            String key = MasterPresets.key(preset);
+            if (key != null && key.startsWith("custom_") && removed.contains(MasterPresets.filterType(preset))) keys.add(key);
         }
         if (keys.isEmpty()) return;
         new Handler(Looper.getMainLooper()).post(() -> {
@@ -264,7 +230,7 @@ final class MasterPresetListSync {
         }
         List<String> keys = new ArrayList<>(presets.size());
         for (Object preset : presets) {
-            String key = presetKey(preset);
+            String key = MasterPresets.key(preset);
             keys.add(key == null ? "" : key);
         }
         int stored = (Integer) DataStore.get(symbols, classLoader, position, Integer.valueOf(0));

@@ -5,7 +5,7 @@
 // CWCM(SC(LMT(x))). Capture then applies ODT (when on) and the vignette; preview applies nothing more.
 // The slots make it Post(CWCM(SC(Pre(LMT(x))))):
 //   * Pre, before every stock adjustment: shaping (对比度, later 高光 / 暗部亮度).
-//   * Post, after them: colouring on the final colours (later 分离色调, 彩色 Fx 蓝, 片基).
+//   * Post, after them: colouring on the final colours (彩色 Fx 蓝, later 分离色调, 片基).
 // A middle slot (between SC and CWCM) is not built: it would be the CWCM fuse's output, as Pre is
 // for SC.
 //
@@ -38,6 +38,7 @@
 #include <string>
 #include <vector>
 
+#include "master_fx_blue.h"
 #include "native_hooks.h"
 
 namespace {
@@ -51,7 +52,7 @@ constexpr size_t kOdtTable = 0xd50;
 constexpr size_t kScCwcmTable = 0xd58;
 
 // Slot parameters, in MasterLutSlots.Param order.
-enum Param { kContrast, kParamCount };
+enum Param { kContrast, kFxBlue, kParamCount };
 
 /** A cube of n³ RGB entries, planar, channel 0 fastest, as the stock tables. */
 struct Cube {
@@ -142,6 +143,11 @@ std::shared_ptr<const Slots> build(const int values[kParamCount]) {
     auto built = std::make_shared<Slots>();
     Stage stage;
     if (values[kContrast] != 0 && contrastStage(values[kContrast], stage)) built->pre.push_back(stage);
+    // 彩色 Fx 蓝: 0..100 (Fujifilm 弱 / 强 at about 50 / 100).
+    if (values[kFxBlue] > 0) {
+        float amount = static_cast<float>(std::min(values[kFxBlue], 100));
+        built->post.push_back([amount](float rgb[3]) { fxblue::apply(amount, rgb); });
+    }
     return built;
 }
 

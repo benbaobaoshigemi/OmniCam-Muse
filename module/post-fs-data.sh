@@ -57,6 +57,13 @@ bind_merged_dir() {
 : > "$LOG"
 log "begin"
 
+# Release our configuration and resource binds before rebuilding their sources.
+# Hybrid Mount and post-mount.sh manage the separate /odm/lib64 mount tree.
+for TARGET in $(awk -v root="${MODDIR#/data}/" 'index($4, root) == 1 && index($5, "/odm/etc/") == 1 { print $1, $5 }' /proc/self/mountinfo | sort -rn | cut -d ' ' -f 2); do
+    log "release $TARGET"
+    umount -l "$TARGET" >> "$LOG" 2>&1 || exit 1
+done
+
 for NAME in camera_unit_config camera_unit_feature_config.protobuf oplus_camera_config oplus_camera_algo_switch_config oplus_camera_aps_config oplus_camera_preview_decision_config.json; do
     bind_file "$MODDIR/payload/$NAME" "/odm/etc/camera/config/$NAME"
 done

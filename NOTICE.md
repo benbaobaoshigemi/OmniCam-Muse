@@ -17,3 +17,8 @@ OmniCam Muse 以 GPL-3.0 发布（[LICENSE](LICENSE)）。下列部分来自第�
 ## Lumix 照片风格
 
 `module/payload/master_color/looks/` 里的 Lumix 表由 Panasonic Lumix S9 的照片风格数据整理而来。
+
+## OPPO 相机数据与计算内核
+
+- `module/payload/master_color/looks/x8u/LMTLut0..3` 来自 Find X8 Ultra（PKJ110 17.0.0.104）的原厂大师 LMT。
+- `app/src/main/cpp/ccm_dump_source.h` 的采样、白平衡与 CCM 计算前缀整理自 PMA110 原厂 `libOPAlgoCamHybridRaw.so` 的 ProProc OpenCL 内核，用于同帧线性 RGB 转储。

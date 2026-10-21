@@ -33,7 +33,7 @@ int main(int argc, char **argv) {
         key.toneWeight = w[0];
         key.colourWeight = w[1];
         std::vector<std::vector<float>> tables;
-        if (!mastercolor::blendWithStock(key, look, argv[2], tables, 4)) {
+        if (!mastercolor::blendWithStock(key, {look}, argv[2], tables, 4)) {
             std::fprintf(stderr, "blend %.2f/%.2f failed\n", w[0], w[1]);
             return 1;
         }

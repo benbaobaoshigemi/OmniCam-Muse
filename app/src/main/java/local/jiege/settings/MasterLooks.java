@@ -35,8 +35,8 @@ public final class MasterLooks {
     };
 
     /** OPPO family: the stock master colour of a phone model (機型). Index 0 is the phone itself, the default. */
-    public static final String[] OPPO_IDS = {"oppo", "x7u"};
-    public static final String[] OPPO_LABELS = {"Find X9 Ultra", "Find X7 Ultra"};
+    public static final String[] OPPO_IDS = {"oppo", "x7u", "x8u"};
+    public static final String[] OPPO_LABELS = {"Find X9 Ultra", "Find X7 Ultra", "Find X8 Ultra"};
 
     public static final String[] LUMIX_IDS = {
         "standard", "vivid", "natural", "landscape", "portrait", "l_classicneo", "709like",
@@ -265,7 +265,7 @@ public final class MasterLooks {
 
     private MasterLooks() {}
 
-    /** Look id for the native baker: "oppo" is this phone's stock master LMT, "x7u" the Find X7 Ultra one. */
+    /** Look id for the native baker: "oppo" is this phone's stock master LMT, "x8u" / "x7u" the Find X8 / X7 Ultra ones. */
     public static String lookId(int family, int oppo, int lumix, int film, int canon, int darktable, int basic, int paper, int hncsIntent, int hncsCurve) {
         switch (family) {
             case FAMILY_OPPO:

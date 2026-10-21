@@ -6,7 +6,7 @@
 // Preview (CombineLut, MasterColor.java): the Java side writes live/<dir>/key.bin and points the
 // LMT directory there; the libc path hooks bake it on the first LMTLut read.
 // In a live directory LMTLut1..5 are served as LMTLut0 (the stock luma grid then interpolates
-// between identical tables) unless the directory holds its own (blend mode), and every other name
+// between identical tables) unless the directory holds its own (blend mode, x8u), and every other name
 // as the stock ODM lmt entry (SC / CWCM stay stock).
 //
 // files/jiege/mastercolor/look (written by MasterColor.java from the 大师色彩 setting) selects the look:
@@ -173,7 +173,7 @@ bool writeFile(const std::string &path, const std::vector<float> &lut) {
     return ok;
 }
 
-// Writes LMTLut0 (replacement) or LMTLut0..5 (blend); LMTLut0 is renamed last, so its presence means the
+// Writes LMTLut0 (replacement) or LMTLut0..5 (blend, or a look with slot tables); LMTLut0 is renamed last, so its presence means the
 // directory is complete.
 bool writeTables(const std::string &dir, const std::vector<std::vector<float>> &tables) {
     std::string tmp = dir + ".tmp" + std::to_string(::gettid());
@@ -202,12 +202,11 @@ bool ensure(const std::string &dir, const mastercolor::Key &key) {
     ::mkdir(kRoot, 0770);
     ::mkdir(kLive, 0770);
     auto start = std::chrono::steady_clock::now();
-    std::vector<float> lut;
     unsigned threads = std::max(2u, std::min(8u, std::thread::hardware_concurrency()));
-    std::vector<std::vector<float>> tables;
-    bool ok = mastercolor::bake(key, lut, int(threads));
-    if (ok && key.blended()) ok = mastercolor::blendWithStock(key, lut, kStockLmt, tables, int(threads));
-    else if (ok) tables.push_back(std::move(lut));
+    std::vector<std::vector<float>> looks, tables;
+    bool ok = mastercolor::lookTables(key, looks, int(threads));
+    if (ok && key.blended()) ok = mastercolor::blendWithStock(key, looks, kStockLmt, tables, int(threads));
+    else if (ok) tables = std::move(looks);
     ok = ok && writeTables(dir, tables);
     long ms = long(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count());
     if (ok) {

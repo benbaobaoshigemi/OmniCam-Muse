@@ -54,6 +54,7 @@ final class GrCameraWatermark {
         Symbols symbols = Symbols.get();
         Log.guard(TAG, "GR watermark stored values", () -> hookStoredValues(symbols, classLoader));
         Log.guard(TAG, "GR watermark capture state", () -> hookCaptureState(symbols));
+        Log.guard(TAG, "GR watermark partition", () -> hookWatermarkPartition(symbols));
         Log.guard(TAG, "GR watermark settings summary", () -> hookSettingsSummary(symbols, classLoader));
         hookEditorLaunch(symbols);
         hookStyleJson(symbols, classLoader);
@@ -118,6 +119,48 @@ final class GrCameraWatermark {
         XposedBridge.hookMethod(symbols.method("DataManager.getOr"), read);
     }
 
+    /** Normal photo watermark settings. */
+    private static final String[] NORMAL_WATERMARK_PREFS = {
+        "pref_watermark_capture_switch_key",
+        "pref_ai_master_watermark_photo_open_state",
+        "pref_ai_master_watermark_photo_style_id",
+        "pref_ai_master_watermark_photo_style_id_backup",
+    };
+    /** GR (mode-limit) watermark settings. */
+    private static final String[] GR_WATERMARK_PREFS = {
+        GR_CAPTURE_SWITCH,
+        "pref_ai_master_watermark_mode_limit_open_state",
+        "pref_ai_master_watermark_mode_limit_style_id",
+        "pref_ai_master_watermark_mode_limit_style_id_backup",
+    };
+
+    /**
+     * The GR and normal watermarks are stored apart: in GR mode only the GR settings are written,
+     * in every other mode only the normal ones. The camera links the two in several places (the GR
+     * switch handler in CameraManager, the gallery editor's style broadcast, which closes whichever
+     * watermark it sends no style for); writes to the other side are dropped at the store.
+     */
+    private static void hookWatermarkPartition(Symbols symbols) {
+        XC_MethodHook write = new XC_MethodHook() {
+            @Override protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                Object key = param.args[0];
+                if (key == null) return;
+                if (GrState.isGrMode() ? holdsAny(key, NORMAL_WATERMARK_PREFS) : holdsAny(key, GR_WATERMARK_PREFS)) {
+                    param.setResult(null);
+                }
+            }
+        };
+        XposedBridge.hookMethod(symbols.method("DataManager.put"), write);
+        XposedBridge.hookMethod(symbols.method("DataManager.putSync"), write);
+    }
+
+    private static boolean holdsAny(Object key, String[] names) throws IllegalAccessException {
+        for (String name : names) {
+            if (Reflection.hasStringField(key, name)) return true;
+        }
+        return false;
+    }
+
     /** GR captures use the GR switch in the shared master-watermark decision. */
     private static void hookCaptureState(Symbols symbols) {
         XposedBridge.hookMethod(symbols.method("WatermarkModel.isOpen"), new XC_MethodHook() {
@@ -134,19 +177,31 @@ final class GrCameraWatermark {
         });
     }
 
-    /** The settings row describes the GR switch while the active camera mode is GR. */
+    /**
+     * The settings row says what the watermark page shows when it opens, which is its photo tab.
+     * The camera's own summary is "on" when any of the photo, video or mode-limit (GR) watermarks
+     * is open, so an open video or GR watermark shows as on over a closed photo watermark. In GR the
+     * row follows the GR switch; elsewhere the photo watermark is on when its switch is "on" and it
+     * has a style, which is what Util.openEditor hands the page.
+     */
     private static void hookSettingsSummary(Symbols symbols, ClassLoader classLoader) {
         XposedBridge.hookMethod(symbols.method("Preference.assignment"), new XC_MethodHook() {
             @Override protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                if (!GrState.isGrMode()
-                        || !Reflection.hasStringField(param.thisObject, "pref_watermark_setting_key")) return;
+                if (!Reflection.hasStringField(param.thisObject, "pref_watermark_setting_key")) return;
                 Context context = (Context) Reflection.findFieldByType(param.thisObject, "android.content.Context");
-                String label = grWatermarkOn(symbols, classLoader)
-                    ? "camera_setting_slogan_on" : "camera_setting_switch_off";
+                boolean on = GrState.isGrMode() ? grWatermarkOn(symbols, classLoader)
+                    : watermarkOn(symbols, classLoader, "pref_watermark_capture_switch_key", "pref_ai_master_watermark_photo_style_id");
+                String label = on ? "camera_setting_slogan_on" : "camera_setting_switch_off";
                 int id = context.getResources().getIdentifier(label, "string", context.getPackageName());
                 param.args[0] = context.getString(id);
             }
         });
+    }
+
+    private static boolean watermarkOn(Symbols symbols, ClassLoader classLoader, String switchPref, String stylePref) throws Throwable {
+        Object switchValue = DataStore.get(symbols, classLoader, DataStore.key(symbols, "Keys.styleId", switchPref), "off");
+        Object style = DataStore.get(symbols, classLoader, DataStore.key(symbols, "Keys.styleId", stylePref), "");
+        return "on".equals(switchValue) && !"".equals(style);
     }
 
     /** The GR watermark switch as stored; unset reads as on (hookStoredValues defaults it to "on"). */

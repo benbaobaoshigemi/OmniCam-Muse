@@ -56,9 +56,9 @@ public final class VideoFilterHighSpec {
         symbols = Symbols.get();
         final Class<?> keys = symbols.cls("FeatureKeys");
         final Class<?> keyType = symbols.cls("FeatureKey");
-        sizeKey = featureKey(keys, keyType, "getVideoSizeFromSp");
-        fpsKey = featureKey(keys, keyType, "getVideoFpsFromSp");
-        aiKey = featureKey(keys, keyType, "isAiEnhancementVideoOpen");
+        sizeKey = Reflection.findFeatureKey(keys, keyType, "getVideoSizeFromSp");
+        fpsKey = Reflection.findFeatureKey(keys, keyType, "getVideoFpsFromSp");
+        aiKey = Reflection.findFeatureKey(keys, keyType, "isAiEnhancementVideoOpen");
         final int noneIndex = XposedHelpers.getStaticIntField(
             XposedHelpers.findClass("com.oplus.camera.filter.FilterUtil", classLoader), "sNoneIndex");
 
@@ -118,17 +118,6 @@ public final class VideoFilterHighSpec {
                 symbols.call("FeaturePresenter.resetState", w);
             }
         });
-    }
-
-    /** The FeatureKey constant (a static field of FeatureKeys) whose name is {@code name}. */
-    private static Object featureKey(Class<?> keys, Class<?> keyType, String name) throws IllegalAccessException {
-        for (java.lang.reflect.Field field : keys.getDeclaredFields()) {
-            if (!java.lang.reflect.Modifier.isStatic(field.getModifiers()) || field.getType() != keyType) continue;
-            field.setAccessible(true);
-            Object key = field.get(null);
-            if (key != null && Reflection.hasStringField(key, name)) return key;
-        }
-        throw new IllegalStateException("feature key not found: " + name);
     }
 
     private static String mode(Object presenter) throws IllegalAccessException {

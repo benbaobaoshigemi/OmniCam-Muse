@@ -21,8 +21,8 @@ public final class MasterLutSlots {
     private static final String TAG = "MuseLutSlots";
     private static final String COMBINER = "com.oplus.ocs.camera.CombineLutHelper";
 
-    /** Slot parameters; the order is the native Param enum. Each is -100..100, 0 = identity. */
-    public enum Param { CONTRAST }
+    /** Slot parameters; the order is the native Param enum. Each is -100..100, 0 = identity; FX_BLUE uses 0..100. */
+    public enum Param { CONTRAST, FX_BLUE }
 
     private static final int[] values = new int[Param.values().length];
     private static volatile String previewMode;

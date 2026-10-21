@@ -6,6 +6,8 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage;
 import local.jiege.hook.common.CameraLogMirror;
 import local.jiege.hook.common.Log;
 import local.jiege.hook.common.Symbols;
+import local.jiege.hook.capture.CaptureDumps;
+import local.jiege.hook.filterpanel.LegacyFilterPanel;
 import local.jiege.hook.filters.FilterGroupInjector;
 import local.jiege.hook.gr.GrPort;
 import local.jiege.hook.gallery.AddressNavigation;
@@ -46,6 +48,7 @@ import local.jiege.hook.x10.X10FilterPort;
  *
  * Features:
  *   filters       filter catalogs, normal and master scope managed apart; group injection
+ *   filterpanel   long press on the master card / palette entry opens the stock filter strip
  *   gr            Ricoh GR port (camera + gallery watermark)
  *   mastercolor   master mode colour: live look tables (HNCS, Lumix, film, ...) in place of the stock master LMT
  *   pop           POP (retro camera) port and POP high pixel
@@ -101,6 +104,7 @@ public final class ModuleEntry implements IXposedHookLoadPackage, IXposedHookZyg
             // LSPosed calls native_init when this library is loaded; it must be registered before
             // the camera loads libAlgoInterface / libBasicTone*, so it goes before the features.
             System.loadLibrary("jiege_native");
+            CaptureDumps.installCamera();
             Symbols.install("camera", classLoader, param.appInfo.sourceDir, param.appInfo.dataDir);
             PopPort.installCamera(classLoader, CAMERA.equals(param.processName));
             FilterGroupInjector.installCamera(classLoader);
@@ -111,6 +115,7 @@ public final class ModuleEntry implements IXposedHookLoadPackage, IXposedHookZyg
             KeyLaunchMode.installCamera(classLoader);
             Log.guard("CameraLog", "camera log mirror", () -> CameraLogMirror.install(classLoader));
             MasterFilterCompletion.installCamera(classLoader);
+            LegacyFilterPanel.installCamera(classLoader);
             GrPort.installCamera(classLoader);
             MasterColor.installCamera(classLoader);
             ShutterSound.installCamera(classLoader);
