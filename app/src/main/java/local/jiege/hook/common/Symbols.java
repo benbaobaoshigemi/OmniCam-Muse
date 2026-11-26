@@ -137,6 +137,10 @@ public final class Symbols {
         field(fieldId).set(target, value);
     }
 
+    public void setAll(String fieldId, Object target, Object value) throws IllegalAccessException {
+        for (Field field : this.<Field>all(fieldId)) field.set(target, value);
+    }
+
     /** Invokes a method symbol (virtually, so subclasses' overrides run); rethrows the method's own exception. */
     public Object call(String methodId, Object target, Object... args) throws Throwable {
         try {

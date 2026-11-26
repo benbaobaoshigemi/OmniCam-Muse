@@ -38,7 +38,7 @@ final class GrEffectTransport {
                 boolean gr = "gr".equals(param.args[2]);
                 // Entering or leaving GR invalidates the cached LUT (index = -1).
                 if (gr != "gr".equals(symbols.get("Lut3d.mode", param.thisObject))) {
-                    symbols.set("Lut3d.index", param.thisObject, -1);
+                    symbols.setAll("Lut3d.index", param.thisObject, -1);
                 }
                 loadingGrLut.set(gr);
             }

@@ -58,6 +58,7 @@ thread_local bool activeMaster = false;
 thread_local std::string activeMasterDir;
 
 bool isGrFrame(void *frame) {
+    if (!getSettingInt) return false;
     void *settings = *reinterpret_cast<void **>(static_cast<char *>(frame) + 0x8110);
     return getSettingInt(settings, &kGrSizeKey, 0) == 63;
 }
@@ -177,7 +178,9 @@ static void *resolveGetSettingInt(void *lmtAddress, void *imageBase) {
             return const_cast<uint32_t *>(&code[i - 2] + imm26);
         }
     }
-    return static_cast<char *>(imageBase) + 0x15389cc;
+    uintptr_t lmtOffset = reinterpret_cast<uintptr_t>(lmtAddress) - reinterpret_cast<uintptr_t>(imageBase);
+    if (lmtOffset == 0x1fd31f4u) return static_cast<char *>(imageBase) + 0x15389cc;
+    return nullptr;
 }
 
 void hookAlgoInterface(HookFunction hook, void *handle) {
@@ -187,8 +190,14 @@ void hookAlgoInterface(HookFunction hook, void *handle) {
     Dl_info info{};
     void *lmtAddress = dlsym(handle, lmtSymbol);
     if (!lmtAddress || !dladdr(lmtAddress, &info)) return;
-    getSettingInt = reinterpret_cast<decltype(getSettingInt)>(
-        resolveGetSettingInt(lmtAddress, info.dli_fbase));
+    void *resolvedSettingInt = resolveGetSettingInt(lmtAddress, info.dli_fbase);
+    if (!resolvedSettingInt) {
+        __android_log_print(ANDROID_LOG_ERROR, kTag,
+                            "getSettingInt not resolved (lmt=%p); skipping AlgoInterface hooks",
+                            lmtAddress);
+        return;
+    }
+    getSettingInt = reinterpret_cast<decltype(getSettingInt)>(resolvedSettingInt);
     hookExport(hook, handle, lmtSymbol, reinterpret_cast<void *>(getLmtParams),
                reinterpret_cast<void **>(&originalGetLmtParams), kTag);
     filterProcessV1 = reinterpret_cast<decltype(filterProcessV1)>(
