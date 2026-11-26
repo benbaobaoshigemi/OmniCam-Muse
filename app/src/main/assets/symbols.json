@@ -11,12 +11,6 @@
     "com.oplus.camera.gr.raw.capture_defer.not.support"
    ]
   },
-  "ModeItem": {
-   "kind": "class",
-   "strings": [
-    "getNameDrawable, load drawable failed, mNameDrawableId: "
-   ]
-  },
   "ProMode": {
    "kind": "class",
    "strings": [
@@ -216,129 +210,6 @@
     "Landroid/animation/ValueAnimator;->cancel()V"
    ]
   },
-  "ControlUi.hideControls": {
-   "kind": "method",
-   "in": "@ControlUi",
-   "params": [
-    "boolean"
-   ],
-   "ret": "void",
-   "invokes": [
-    "Lcom/oplus/camera/control/MainShutterButton;->setVisibility(I)V",
-    "Landroid/view/View;->clearAnimation()V",
-    "Lcom/oplus/camera/control/ShutterButton;->setVisibility(I)V"
-   ]
-  },
-  "ControlUi.mainShutterAnimated": {
-   "kind": "method",
-   "in": "@ControlUi",
-   "params": [
-    "int",
-    "int",
-    "int",
-    null,
-    "android.view.animation.PathInterpolator"
-   ],
-   "ret": "void"
-  },
-  "ControlUi.thumbnailAnimated": {
-   "kind": "method",
-   "in": "@ControlUi",
-   "params": [
-    "int",
-    "int",
-    "android.view.animation.Interpolator",
-    "int",
-    "boolean"
-   ],
-   "ret": "void"
-  },
-  "ControlUi.mainShutter": {
-   "kind": "method",
-   "in": "@ControlUi",
-   "params": [
-    "int",
-    "int"
-   ],
-   "ret": "void",
-   "calledBy": [
-    "@ControlUi.hideControls"
-   ],
-   "invokes": [
-    "@ControlUi.mainShutterAnimated"
-   ]
-  },
-  "ControlUi.thumbnail": {
-   "kind": "method",
-   "in": "@ControlUi",
-   "params": [
-    "int",
-    "int"
-   ],
-   "ret": "void",
-   "calledBy": [
-    "@ControlUi.hideControls"
-   ],
-   "invokes": [
-    "@ControlUi.thumbnailAnimated"
-   ]
-  },
-  "ControlUi.sideButtonAnimated": {
-   "kind": "method",
-   "in": "@ControlUi",
-   "params": [
-    "int",
-    "int",
-    null,
-    "int"
-   ],
-   "ret": "void"
-  },
-  "ControlUi.switchCamera": {
-   "kind": "method",
-   "in": "@ControlUi",
-   "params": [
-    "int",
-    "int"
-   ],
-   "ret": "void",
-   "calledBy": [
-    "@ControlUi.hideControls"
-   ],
-   "invokes": [
-    "@ControlUi.sideButtonAnimated"
-   ]
-  },
-  "ControlUi.sideShutter": {
-   "kind": "method",
-   "in": "@ControlUi",
-   "params": [
-    "int"
-   ],
-   "ret": "void",
-   "calledBy": [
-    "@ControlUi.hideControls"
-   ]
-  },
-  "ControlUi.sideShutterEnabled": {
-   "kind": "method",
-   "in": "@ControlUi",
-   "params": [
-    "boolean"
-   ],
-   "ret": "void",
-   "calledBy": [
-    "@ControlUi.hideControls"
-   ]
-  },
-  "ControlUi.sideShutterView": {
-   "kind": "field",
-   "in": "@ControlUi",
-   "type": "com.oplus.camera.control.ShutterButton",
-   "readBy": [
-    "@ControlUi.sideShutterEnabled"
-   ]
-  },
   "GrViewManager": {
    "kind": "class",
    "strings": [
@@ -475,9 +346,12 @@
   "CaptureParams.refreshEffectEntry": {
    "kind": "method",
    "in": "@CaptureParams",
-   "name": "Q3",
    "params": [],
-   "ret": "void"
+   "ret": "void",
+   "invokes": [
+    "@GrSupport.supported",
+    "Lcom/oplus/camera/common/thread/ThreadManager;->m(Ljava/lang/Runnable;)V"
+   ]
   },
   "CaptureParams.menuClick": {
    "kind": "method",
@@ -630,7 +504,6 @@
   },
   "Lut3dData.paletteMode": {
    "kind": "method",
-   "in": "com.oplus.camera.common.utils.Lut3dDataManager",
    "params": [
     "java.lang.String"
    ],
@@ -1477,6 +1350,15 @@
    "ret": "@SoundPlayer",
    "static": true
   },
+  "SoundPlayer.checkRinger": {
+   "kind": "method",
+   "in": "@SoundPlayer",
+   "params": [],
+   "ret": "void",
+   "invokes": [
+    "Landroid/os/ConditionVariable;->block(J)Z"
+   ]
+  },
   "SoundPlayer.silence": {
    "kind": "method",
    "in": "@SoundPlayer",
@@ -1487,8 +1369,12 @@
    "strings": [
     "com.oplus.blockVibration.delay"
    ],
+   "numbers": [
+    7
+   ],
    "notInvokes": [
-    "Landroid/os/ConditionVariable;->block(J)Z"
+    "Landroid/os/ConditionVariable;->block(J)Z",
+    "@SoundPlayer.checkRinger"
    ]
   },
   "SoundPlayer.unsilence": {
@@ -1499,7 +1385,7 @@
    ],
    "ret": "void",
    "invokes": [
-    "Landroid/os/ConditionVariable;->block(J)Z"
+    "@SoundPlayer.checkRinger"
    ]
   },
   "SoundPlayer.refresh": {
@@ -1623,41 +1509,6 @@
     "/mode_limit_watermark/"
    ]
   },
-  "WatermarkYuv.bundle": {
-   "kind": "method",
-   "params": [
-    "int"
-   ],
-   "ret": "android.os.Bundle",
-   "strings": [
-    "WatermarkYuvBufferHelpe"
-   ]
-  },
-  "Preference.assignment": {
-   "kind": "method",
-   "in": "com.coui.appcompat.preference.COUIPreference",
-   "params": [
-    "java.lang.CharSequence"
-   ],
-   "ret": "void"
-  },
-  "WatermarkModel.isOpen": {
-   "kind": "method",
-   "params": [
-    "boolean",
-    "boolean",
-    "java.lang.String",
-    "long",
-    "java.lang.String",
-    "boolean[]"
-   ],
-   "ret": "boolean",
-   "static": true,
-   "strings": [
-    "isAiMasterWatermarkOpen, savedModeName is null",
-    "isAiMasterWatermarkOpen, isRetroPolaroidFilterOpen"
-   ]
-  },
   "WatermarkModel.styleNormal": {
    "kind": "method",
    "params": [
@@ -1697,182 +1548,182 @@
   "Lut3d.mode": {
    "kind": "field",
    "in": "com.oplus.camera.common.utils.Lut3dDataManager",
-   "name": "P",
-   "type": "java.lang.String"
+   "type": "java.lang.String",
+   "writtenBy": [
+    "@Lut3d.load"
+   ],
+   "readBy": [
+    "@Lut3d.update"
+   ]
   },
   "Lut3d.index": {
    "kind": "field",
    "in": "com.oplus.camera.common.utils.Lut3dDataManager",
-   "name": "M",
+   "name": "N",
    "type": "int"
   },
-  "Lut3d.update": {
-   "kind": "method",
-   "in": "com.oplus.camera.common.utils.Lut3dDataManager",
-   "params": [],
-   "ret": "void",
+  "ModeItem": {
+   "kind": "class",
    "strings": [
-    "updateBasicToneData, palette branch skip process, capModeName: "
+    "getNameDrawable, load drawable failed, mNameDrawableId: "
    ]
   },
-  "StageRequest.pictureCallback": {
+  "ControlUi.hideControls": {
    "kind": "method",
+   "in": "@ControlUi",
    "params": [
-    "com.oplus.camera.aps.service.ApsService$CameraPictureCallbackImpl"
+    "boolean"
    ],
    "ret": "void",
-   "abstract": true
+   "invokes": [
+    "Lcom/oplus/camera/control/MainShutterButton;->setVisibility(I)V",
+    "Landroid/view/View;->clearAnimation()V",
+    "Lcom/oplus/camera/control/ShutterButton;->setVisibility(I)V"
+   ]
   },
-  "StageRequestType": {
-   "kind": "class",
-   "ownerOf": "@StageRequest.pictureCallback"
-  },
-  "Stage.request": {
-   "kind": "field",
-   "in": "com.oplus.camera.protocal.event.message.deviceProtocol.deviceControlRequest.EventMessageCaptureRequestStage",
-   "type": "@StageRequestType"
-  },
-  "ModeSwitchStage.stage": {
-   "kind": "field",
-   "in": "com.oplus.camera.protocal.event.message.modeProtocol.EventMessageModeSwitcherStage",
-   "name": "b",
-   "type": "int"
-  },
-  "ModeSwitchStage.toMode": {
-   "kind": "field",
-   "in": "com.oplus.camera.protocal.event.message.modeProtocol.EventMessageModeSwitcherStage",
-   "name": "e",
-   "type": "java.lang.String"
-  },
-  "Zoom.labelBitmap": {
-   "kind": "field",
-   "in": "com.oplus.camera.feature.zoom.view.ZoomSeekBar",
-   "name": "I6",
-   "type": "android.graphics.Bitmap"
-  },
-  "Zoom.fadeLabels": {
+  "ControlUi.mainShutterAnimated": {
    "kind": "method",
-   "in": "com.oplus.camera.feature.zoom.view.ZoomSeekBar",
-   "name": "b",
-   "params": [],
+   "in": "@ControlUi",
+   "params": [
+    "int",
+    "int",
+    "int",
+    null,
+    "android.view.animation.PathInterpolator"
+   ],
    "ret": "void"
   },
-  "ZoomBase.fadeLabels": {
+  "ControlUi.thumbnailAnimated": {
    "kind": "method",
-   "in": "@ZoomBase",
-   "overrideOf": "@Zoom.fadeLabels"
+   "in": "@ControlUi",
+   "params": [
+    "int",
+    "int",
+    "android.view.animation.Interpolator",
+    "int",
+    "boolean"
+   ],
+   "ret": "void"
   },
-  "ZoomUi.bar": {
-   "kind": "field",
-   "in": "@ZoomUi",
-   "readBy": [
-    "@ZoomUi.setUnit"
+  "ControlUi.mainShutter": {
+   "kind": "method",
+   "in": "@ControlUi",
+   "params": [
+    "int",
+    "int"
+   ],
+   "ret": "void",
+   "calledBy": [
+    "@ControlUi.hideControls"
+   ],
+   "invokes": [
+    "@ControlUi.mainShutterAnimated"
    ]
   },
-  "Card.texts": {
-   "kind": "field",
-   "in": "@Card",
-   "type": "com.oplus.camera.common.view.StrokeTextView",
-   "multi": true
-  },
-  "SoundPlayer.refreshedInts": {
-   "kind": "field",
-   "in": "@SoundPlayer",
-   "type": "int",
-   "writtenBy": [
-    "@SoundPlayer.refresh"
+  "ControlUi.thumbnail": {
+   "kind": "method",
+   "in": "@ControlUi",
+   "params": [
+    "int",
+    "int"
    ],
-   "multi": true
+   "ret": "void",
+   "calledBy": [
+    "@ControlUi.hideControls"
+   ],
+   "invokes": [
+    "@ControlUi.thumbnailAnimated"
+   ]
   },
-  "Shutter.b3": {
+  "ControlUi.sideButtonAnimated": {
+   "kind": "method",
+   "in": "@ControlUi",
+   "params": [
+    "int",
+    "int",
+    null,
+    "int"
+   ],
+   "ret": "void"
+  },
+  "ControlUi.switchCamera": {
+   "kind": "method",
+   "in": "@ControlUi",
+   "params": [
+    "int",
+    "int"
+   ],
+   "ret": "void",
+   "calledBy": [
+    "@ControlUi.hideControls"
+   ],
+   "invokes": [
+    "@ControlUi.sideButtonAnimated"
+   ]
+  },
+  "ControlUi.sideShutter": {
+   "kind": "method",
+   "in": "@ControlUi",
+   "params": [
+    "int"
+   ],
+   "ret": "void",
+   "calledBy": [
+    "@ControlUi.hideControls"
+   ]
+  },
+  "ControlUi.sideShutterEnabled": {
+   "kind": "method",
+   "in": "@ControlUi",
+   "params": [
+    "boolean"
+   ],
+   "ret": "void",
+   "calledBy": [
+    "@ControlUi.hideControls"
+   ]
+  },
+  "ControlUi.sideShutterView": {
    "kind": "field",
-   "in": "com.oplus.camera.control.MainShutterButton",
-   "name": "b3",
-   "type": "android.graphics.RectF"
+   "in": "@ControlUi",
+   "type": "com.oplus.camera.control.ShutterButton",
+   "readBy": [
+    "@ControlUi.sideShutterEnabled"
+   ]
   },
-  "Shutter.c3": {
-   "kind": "field",
-   "in": "com.oplus.camera.control.MainShutterButton",
-   "name": "c3",
-   "type": "android.graphics.RectF"
-  },
-  "Shutter.d3": {
-   "kind": "field",
-   "in": "com.oplus.camera.control.MainShutterButton",
-   "name": "d3",
-   "type": "android.graphics.RectF"
-  },
-  "Shutter.e3": {
-   "kind": "field",
-   "in": "com.oplus.camera.control.MainShutterButton",
-   "name": "e3",
-   "type": "android.graphics.RectF"
-  },
-  "Shutter.g3": {
-   "kind": "field",
-   "in": "com.oplus.camera.control.MainShutterButton",
-   "name": "g3",
-   "type": "android.graphics.RectF"
-  },
-  "Shutter.h3": {
-   "kind": "field",
-   "in": "com.oplus.camera.control.MainShutterButton",
-   "name": "h3",
-   "type": "android.graphics.RectF"
-  },
-  "Shutter.l3": {
-   "kind": "field",
-   "in": "com.oplus.camera.control.MainShutterButton",
-   "name": "l3",
-   "type": "android.graphics.RectF"
-  },
-  "Shutter.t4": {
-   "kind": "field",
-   "in": "com.oplus.camera.control.MainShutterButton",
-   "name": "t4",
-   "type": "android.graphics.SweepGradient"
-  },
-  "Shutter.H4": {
-   "kind": "field",
-   "in": "com.oplus.camera.control.MainShutterButton",
-   "name": "H4",
-   "type": "android.graphics.LinearGradient"
-  },
-  "Shutter.I4": {
-   "kind": "field",
-   "in": "com.oplus.camera.control.MainShutterButton",
-   "name": "I4",
-   "type": "android.graphics.LinearGradient"
-  },
-  "Shutter.s3": {
-   "kind": "field",
-   "in": "com.oplus.camera.control.MainShutterButton",
-   "name": "s3",
-   "type": "android.graphics.Paint"
-  },
-  "Shutter.j1": {
-   "kind": "field",
-   "in": "com.oplus.camera.control.MainShutterButton",
-   "name": "j1",
-   "type": "int"
-  },
-  "Shutter.k1": {
-   "kind": "field",
-   "in": "com.oplus.camera.control.MainShutterButton",
-   "name": "k1",
-   "type": "int"
-  },
-  "BitmapUtil.cropCenterByScale": {
+  "WatermarkYuv.bundle": {
    "kind": "method",
    "params": [
-    "android.graphics.Bitmap",
-    "float",
-    "float"
+    "int"
    ],
-   "ret": "android.graphics.Bitmap",
+   "ret": "android.os.Bundle",
+   "strings": [
+    "WatermarkYuvBufferHelpe"
+   ]
+  },
+  "Preference.assignment": {
+   "kind": "method",
+   "in": "com.coui.appcompat.preference.COUIPreference",
+   "params": [
+    "java.lang.CharSequence"
+   ],
+   "ret": "void"
+  },
+  "WatermarkModel.isOpen": {
+   "kind": "method",
+   "params": [
+    "boolean",
+    "boolean",
+    "java.lang.String",
+    "long",
+    "java.lang.String",
+    "boolean[]"
+   ],
+   "ret": "boolean",
    "static": true,
    "strings": [
-    "cropCenterBitmapByScale, error, sw: "
+    "isAiMasterWatermarkOpen, savedModeName is null",
+    "isAiMasterWatermarkOpen, isRetroPolaroidFilterOpen"
    ]
   },
   "Storage.updateImage": {
@@ -1931,362 +1782,6 @@
    "strings": [
     "updateQuickForGallery, condition not satisfied, so return"
    ]
-  },
-  "EffectMenu": {
-   "kind": "class",
-   "strings": [
-    "MasterEffectMenuV2"
-   ]
-  },
-  "EffectMenuBase": {
-   "kind": "class",
-   "superOf": "@EffectMenu"
-  },
-  "EffectMenuBase.items": {
-   "kind": "field",
-   "in": "@EffectMenuBase",
-   "type": "java.util.ArrayList"
-  },
-  "EffectMenuBase.restore": {
-   "kind": "method",
-   "in": "@EffectMenuBase",
-   "params": [
-    "int",
-    "boolean"
-   ],
-   "strings": [
-    "BaseMasterEffectMenu"
-   ]
-  },
-  "EffectMenuBase.report": {
-   "kind": "method",
-   "in": "@EffectMenuBase",
-   "strings": [
-    "funcValue_select"
-   ]
-  },
-  "EffectMenuBase.hideSeekBar": {
-   "kind": "method",
-   "in": "@EffectMenuBase",
-   "params": [
-    "boolean"
-   ],
-   "ret": "void",
-   "invokes": [
-    "@EffectMenuBase.report"
-   ]
-  },
-  "EffectMenuBase.refreshItem": {
-   "kind": "method",
-   "in": "@EffectMenuBase",
-   "params": [
-    "int"
-   ],
-   "ret": "void",
-   "calledBy": [
-    "@EffectMenuBase.restore"
-   ]
-  },
-  "EffectMenuBase.refreshReset": {
-   "kind": "method",
-   "in": "@EffectMenuBase",
-   "params": [
-    "boolean"
-   ],
-   "ret": "void",
-   "calledBy": [
-    "@EffectMenuBase.restore"
-   ]
-  },
-  "EffectMenu.dispatch": {
-   "kind": "method",
-   "params": [
-    "int",
-    "com.oplus.camera.data.DataKey"
-   ],
-   "ret": "void",
-   "calledBy": [
-    "@EffectMenuBase.restore"
-   ]
-  },
-  "EffectItem.key": {
-   "kind": "field",
-   "type": "com.oplus.camera.data.DataKey",
-   "static": false,
-   "readBy": [
-    "@EffectMenuBase.restore"
-   ]
-  },
-  "EffectItem": {
-   "kind": "class",
-   "ownerOf": "@EffectItem.key"
-  },
-  "EffectItem.value": {
-   "kind": "field",
-   "in": "@EffectItem",
-   "type": "int",
-   "writtenBy": [
-    "@EffectMenuBase.restore"
-   ]
-  },
-  "EffectItem.label": {
-   "kind": "field",
-   "in": "@EffectItem",
-   "name": "a",
-   "type": "int"
-  },
-  "EffectItem.icon": {
-   "kind": "field",
-   "in": "@EffectItem",
-   "name": "b",
-   "type": "int"
-  },
-  "EffectMenu.bipolar": {
-   "kind": "method",
-   "in": "@EffectMenu",
-   "params": [
-    "int"
-   ],
-   "ret": "boolean"
-  },
-  "EffectContainer": {
-   "kind": "class",
-   "strings": [
-    "MasterEffectContainer"
-   ],
-   "super": "android.widget.LinearLayout"
-  },
-  "EffectContainer.sideMargin": {
-   "kind": "field",
-   "in": "@EffectContainer",
-   "name": "q",
-   "type": "int"
-  },
-  "EffectContainer.updateBounds": {
-   "kind": "method",
-   "in": "@EffectContainer",
-   "params": [],
-   "ret": "void",
-   "strings": [
-    "updateBlurBgBounds, calLeftAndRight is null, return"
-   ]
-  },
-  "EffectItemView": {
-   "kind": "class",
-   "strings": [
-    "MasterEffectContainer",
-    "expand"
-   ]
-  },
-  "EffectItemView.onClick": {
-   "kind": "method",
-   "in": "@EffectItemView",
-   "name": "onClick"
-  },
-  "EffectItemView.item": {
-   "kind": "field",
-   "in": "@EffectItemView",
-   "type": "@EffectItem"
-  },
-  "EffectItemView.bind": {
-   "kind": "method",
-   "in": "@EffectItemView",
-   "params": [
-    "boolean",
-    "boolean"
-   ],
-   "ret": "void"
-  },
-  "EffectItemView.name": {
-   "kind": "field",
-   "in": "@EffectItemView",
-   "type": "android.widget.TextView"
-  },
-  "EffectItemView.icon": {
-   "kind": "field",
-   "in": "@EffectItemView",
-   "type": "android.widget.ImageView"
-  },
-  "EffectValueView": {
-   "kind": "class",
-   "super": "@EffectItemView",
-   "fieldTypes": [
-    "android.widget.TextView"
-   ]
-  },
-  "EffectValueView.bind": {
-   "kind": "method",
-   "in": "@EffectValueView",
-   "overrideOf": "@EffectItemView.bind"
-  },
-  "EffectValueView.value": {
-   "kind": "field",
-   "in": "@EffectValueView",
-   "type": "android.widget.TextView"
-  },
-  "Prefs.storage": {
-   "kind": "method",
-   "params": [],
-   "ret": "java.lang.String",
-   "static": true,
-   "strings": [
-    "mmkv",
-    "sp"
-   ]
-  },
-  "Prefs.get": {
-   "kind": "method",
-   "params": [
-    "com.oplus.camera.data.DataKey",
-    "java.lang.String",
-    "java.lang.Class",
-    "java.lang.Object"
-   ],
-   "ret": "java.lang.Object",
-   "static": true
-  },
-  "EffectMenuBase.seekBar": {
-   "kind": "field",
-   "in": "@EffectMenuBase",
-   "type": "com.oplus.camera.coui.seekbar.HSScaleBar"
-  },
-  "EffectMenu.refreshReset": {
-   "kind": "method",
-   "in": "@EffectMenu",
-   "overrideOf": "@EffectMenuBase.refreshReset"
-  },
-  "EffectMenu.modified": {
-   "kind": "method",
-   "in": "@EffectMenu",
-   "params": [],
-   "ret": "boolean",
-   "calledBy": [
-    "@EffectMenu.refreshReset"
-   ]
-  },
-  "ScaleBar.setListener": {
-   "kind": "method",
-   "in": "com.oplus.camera.coui.seekbar.HSScaleBar",
-   "name": "setScaleBarValueChangeListener"
-  },
-  "ScaleBarListener": {
-   "kind": "class",
-   "paramOf": [
-    "@ScaleBar.setListener",
-    0
-   ]
-  },
-  "ScaleBar.select": {
-   "kind": "method",
-   "in": "com.oplus.camera.coui.seekbar.HSScaleBar",
-   "name": "L",
-   "params": [
-    "int",
-    "boolean"
-   ],
-   "ret": "void"
-  },
-  "ScaleBar.scrollTo": {
-   "kind": "method",
-   "in": "com.oplus.camera.coui.seekbar.HSScaleBar",
-   "name": "G",
-   "params": [
-    "int"
-   ],
-   "ret": "void"
-  },
-  "FilterNames.presenter": {
-   "kind": "field",
-   "in": "@FilterNames",
-   "type": "@CaptureParams"
-  },
-  "CaptureParams.filterIndex": {
-   "kind": "method",
-   "in": "@CaptureParams",
-   "params": [],
-   "ret": "int",
-   "strings": [
-    "com.oplus.camera.feature.filter"
-   ]
-  },
-  "Prefs.put": {
-   "kind": "method",
-   "params": [
-    "com.oplus.camera.data.DataKey",
-    "java.lang.String",
-    "java.lang.Class",
-    "java.lang.Object"
-   ],
-   "ret": "void",
-   "static": true,
-   "invokes": [
-    "Lcom/oplus/camera/data/DataManager;->g(Lcom/oplus/camera/data/DataKey;Ljava/lang/Object;)V"
-   ]
-  },
-  "EffectHost": {
-   "kind": "class",
-   "interfaceOf": "@FilterSource"
-  },
-  "EffectMenuBase.host": {
-   "kind": "field",
-   "in": "@EffectMenuBase",
-   "type": "@EffectHost"
-  },
-  "EffectMenu.showSeekBar": {
-   "kind": "method",
-   "in": "@EffectMenu",
-   "strings": [
-    "showSeekBar, menu is not opened, return"
-   ]
-  },
-  "EffectMenu.hideSeekBar": {
-   "kind": "method",
-   "in": "@EffectMenu",
-   "overrideOf": "@EffectMenuBase.hideSeekBar"
-  },
-  "FilterSource.hideFilterUi": {
-   "kind": "method",
-   "in": "@FilterSource",
-   "params": [],
-   "ret": "void",
-   "strings": [
-    "com.oplus.feature.effect.style.support"
-   ],
-   "calledBy": [
-    "@EffectMenu.showSeekBar"
-   ]
-  },
-  "FilterSource.showFilterUi": {
-   "kind": "method",
-   "in": "@FilterSource",
-   "params": [],
-   "ret": "void",
-   "strings": [
-    "com.oplus.feature.effect.style.support"
-   ],
-   "calledBy": [
-    "@EffectMenu.hideSeekBar"
-   ]
-  },
-  "Vibrate": {
-   "kind": "class",
-   "strings": [
-    "blockVibration, invalid block option: "
-   ]
-  },
-  "Vibrate.instance": {
-   "kind": "field",
-   "type": "@Vibrate",
-   "static": true
-  },
-  "Vibrate.play": {
-   "kind": "method",
-   "in": "@Vibrate",
-   "params": [
-    "int",
-    "int"
-   ],
-   "ret": "void"
   },
   "FilterMenu": {
    "kind": "class",
@@ -2532,28 +2027,51 @@
   "FilterPresenter.palette": {
    "kind": "method",
    "in": "@FilterPresenter",
-   "name": "X3",
    "params": [],
-   "ret": "boolean"
+   "ret": "boolean",
+   "strings": [
+    "key_support_palette"
+   ]
+  },
+  "FilterPresenter.scrollNext": {
+   "kind": "method",
+   "in": "@FilterPresenter",
+   "params": [],
+   "ret": "void",
+   "strings": [
+    "scrollToNextEffectStyle return, effect style param adjusting"
+   ]
   },
   "FilterPresenter.styleMode": {
    "kind": "method",
    "in": "@FilterPresenter",
-   "name": "O3",
    "params": [],
-   "ret": "boolean"
+   "ret": "boolean",
+   "strings": [
+    "professional",
+    "vibe"
+   ],
+   "calledBy": [
+    "@FilterPresenter.scrollNext"
+   ]
   },
-  "FilterPresenter.styleTarget": {
-   "kind": "field",
+  "FilterPresenter.filmCheck": {
+   "kind": "method",
    "in": "@FilterPresenter",
-   "name": "t1",
-   "type": "int"
+   "params": [],
+   "ret": "boolean",
+   "strings": [
+    "fuji_cc.bin",
+    "polaroid_sdr.mslut"
+   ]
   },
   "FilterPresenter.paletteList": {
    "kind": "field",
    "in": "@FilterPresenter",
-   "name": "M0",
-   "type": "boolean"
+   "type": "boolean",
+   "readBy": [
+    "@FilterPresenter.filmCheck"
+   ]
   },
   "FilterPresenter.clampStyle": {
    "kind": "method",
@@ -2563,18 +2081,31 @@
     "int"
    ],
    "ret": "boolean",
-   "fields": [
-    "@FilterPresenter.styleTarget"
+   "calledBy": [
+    "@FilterPresenter.scrollNext"
+   ]
+  },
+  "FilterPresenter.styleTarget": {
+   "kind": "field",
+   "in": "@FilterPresenter",
+   "type": "int",
+   "writtenBy": [
+    "@FilterPresenter.clampStyle"
    ]
   },
   "FilterPresenter.storeStyle": {
    "kind": "method",
    "in": "@FilterPresenter",
-   "name": "p4",
    "params": [
     "int"
    ],
-   "ret": "void"
+   "ret": "void",
+   "calledBy": [
+    "@FilterPresenter.scrollNext"
+   ],
+   "invokes": [
+    "Lcom/oplus/camera/data/DataManager;->g(Lcom/oplus/camera/data/DataKey;Ljava/lang/Object;)V"
+   ]
   },
   "FilterPresenter.applyFilter": {
    "kind": "method",
@@ -2643,6 +2174,609 @@
     "boolean"
    ],
    "ret": "void"
+  },
+  "StageRequest.pictureCallback": {
+   "kind": "method",
+   "params": [
+    "com.oplus.camera.aps.service.ApsService$CameraPictureCallbackImpl"
+   ],
+   "ret": "void",
+   "abstract": true
+  },
+  "StageRequestType": {
+   "kind": "class",
+   "ownerOf": "@StageRequest.pictureCallback"
+  },
+  "Stage.request": {
+   "kind": "field",
+   "in": "com.oplus.camera.protocal.event.message.deviceProtocol.deviceControlRequest.EventMessageCaptureRequestStage",
+   "type": "@StageRequestType"
+  },
+  "ModeSwitchStage.stage": {
+   "kind": "field",
+   "in": "com.oplus.camera.protocal.event.message.modeProtocol.EventMessageModeSwitcherStage",
+   "name": "b",
+   "type": "int"
+  },
+  "ModeSwitchStage.toMode": {
+   "kind": "field",
+   "in": "com.oplus.camera.protocal.event.message.modeProtocol.EventMessageModeSwitcherStage",
+   "name": "e",
+   "type": "java.lang.String"
+  },
+  "Zoom.labelBitmap": {
+   "kind": "field",
+   "in": "com.oplus.camera.feature.zoom.view.ZoomSeekBar",
+   "name": "I6",
+   "type": "android.graphics.Bitmap"
+  },
+  "ZoomBase.fadeAnim": {
+   "kind": "method",
+   "in": "@ZoomBase",
+   "params": [
+    "boolean"
+   ],
+   "ret": "void",
+   "invokes": [
+    "Landroid/os/Handler;->sendEmptyMessageDelayed(IJ)Z",
+    "Landroid/animation/AnimatorSet;->start()V"
+   ]
+  },
+  "Zoom.fadeLabels": {
+   "kind": "method",
+   "in": "com.oplus.camera.feature.zoom.view.ZoomSeekBar",
+   "params": [],
+   "ret": "void",
+   "invokes": [
+    "@ZoomBase.fadeAnim"
+   ]
+  },
+  "ZoomBase.fadeLabels": {
+   "kind": "method",
+   "in": "@ZoomBase",
+   "overrideOf": "@Zoom.fadeLabels"
+  },
+  "ZoomUi.bar": {
+   "kind": "field",
+   "in": "@ZoomUi",
+   "readBy": [
+    "@ZoomUi.setUnit"
+   ]
+  },
+  "Card.texts": {
+   "kind": "field",
+   "in": "@Card",
+   "type": "com.oplus.camera.common.view.StrokeTextView",
+   "multi": true
+  },
+  "SoundPlayer.refreshedInts": {
+   "kind": "field",
+   "in": "@SoundPlayer",
+   "type": "int",
+   "writtenBy": [
+    "@SoundPlayer.refresh"
+   ],
+   "multi": true
+  },
+  "Shutter.b3": {
+   "kind": "field",
+   "in": "com.oplus.camera.control.MainShutterButton",
+   "name": "b3",
+   "type": "android.graphics.RectF"
+  },
+  "Shutter.c3": {
+   "kind": "field",
+   "in": "com.oplus.camera.control.MainShutterButton",
+   "name": "c3",
+   "type": "android.graphics.RectF"
+  },
+  "Shutter.d3": {
+   "kind": "field",
+   "in": "com.oplus.camera.control.MainShutterButton",
+   "name": "d3",
+   "type": "android.graphics.RectF"
+  },
+  "Shutter.e3": {
+   "kind": "field",
+   "in": "com.oplus.camera.control.MainShutterButton",
+   "name": "e3",
+   "type": "android.graphics.RectF"
+  },
+  "Shutter.g3": {
+   "kind": "field",
+   "in": "com.oplus.camera.control.MainShutterButton",
+   "name": "g3",
+   "type": "android.graphics.RectF"
+  },
+  "Shutter.h3": {
+   "kind": "field",
+   "in": "com.oplus.camera.control.MainShutterButton",
+   "name": "h3",
+   "type": "android.graphics.RectF"
+  },
+  "Shutter.l3": {
+   "kind": "field",
+   "in": "com.oplus.camera.control.MainShutterButton",
+   "name": "l3",
+   "type": "android.graphics.RectF"
+  },
+  "Shutter.t4": {
+   "kind": "field",
+   "in": "com.oplus.camera.control.MainShutterButton",
+   "name": "t4",
+   "type": "android.graphics.SweepGradient"
+  },
+  "Shutter.H4": {
+   "kind": "field",
+   "in": "com.oplus.camera.control.MainShutterButton",
+   "name": "H4",
+   "type": "android.graphics.LinearGradient"
+  },
+  "Shutter.I4": {
+   "kind": "field",
+   "in": "com.oplus.camera.control.MainShutterButton",
+   "name": "I4",
+   "type": "android.graphics.LinearGradient"
+  },
+  "Shutter.s3": {
+   "kind": "field",
+   "in": "com.oplus.camera.control.MainShutterButton",
+   "name": "s3",
+   "type": "android.graphics.Paint"
+  },
+  "Shutter.j1": {
+   "kind": "field",
+   "in": "com.oplus.camera.control.MainShutterButton",
+   "name": "j1",
+   "type": "int"
+  },
+  "Shutter.k1": {
+   "kind": "field",
+   "in": "com.oplus.camera.control.MainShutterButton",
+   "name": "k1",
+   "type": "int"
+  },
+  "BitmapUtil.cropCenterByScale": {
+   "kind": "method",
+   "params": [
+    "android.graphics.Bitmap",
+    "float",
+    "float"
+   ],
+   "ret": "android.graphics.Bitmap",
+   "static": true,
+   "strings": [
+    "cropCenterBitmapByScale, error, sw: "
+   ]
+  },
+  "EffectMenu": {
+   "kind": "class",
+   "strings": [
+    "MasterEffectMenuV2"
+   ]
+  },
+  "EffectMenuBase": {
+   "kind": "class",
+   "superOf": "@EffectMenu"
+  },
+  "EffectMenuBase.items": {
+   "kind": "field",
+   "in": "@EffectMenuBase",
+   "type": "java.util.ArrayList"
+  },
+  "EffectMenuBase.seekBar": {
+   "kind": "field",
+   "in": "@EffectMenuBase",
+   "type": "com.oplus.camera.coui.seekbar.HSScaleBar"
+  },
+  "EffectMenuBase.restore": {
+   "kind": "method",
+   "in": "@EffectMenuBase",
+   "params": [
+    "int",
+    "boolean"
+   ],
+   "strings": [
+    "BaseMasterEffectMenu"
+   ]
+  },
+  "EffectMenuBase.report": {
+   "kind": "method",
+   "in": "@EffectMenuBase",
+   "strings": [
+    "funcValue_select"
+   ]
+  },
+  "EffectMenuBase.hideSeekBar": {
+   "kind": "method",
+   "in": "@EffectMenuBase",
+   "params": [
+    "boolean"
+   ],
+   "ret": "void",
+   "invokes": [
+    "@EffectMenuBase.report"
+   ]
+  },
+  "EffectMenuBase.refreshItem": {
+   "kind": "method",
+   "in": "@EffectMenuBase",
+   "params": [
+    "int"
+   ],
+   "ret": "void",
+   "calledBy": [
+    "@EffectMenuBase.restore"
+   ]
+  },
+  "EffectMenuBase.refreshReset": {
+   "kind": "method",
+   "in": "@EffectMenuBase",
+   "params": [
+    "boolean"
+   ],
+   "ret": "void",
+   "calledBy": [
+    "@EffectMenuBase.restore"
+   ]
+  },
+  "EffectHost": {
+   "kind": "class",
+   "interfaceOf": "@FilterSource"
+  },
+  "EffectMenuBase.host": {
+   "kind": "field",
+   "in": "@EffectMenuBase",
+   "type": "@EffectHost"
+  },
+  "EffectMenu.showSeekBar": {
+   "kind": "method",
+   "in": "@EffectMenu",
+   "strings": [
+    "showSeekBar, menu is not opened, return"
+   ]
+  },
+  "EffectMenu.hideSeekBar": {
+   "kind": "method",
+   "in": "@EffectMenu",
+   "overrideOf": "@EffectMenuBase.hideSeekBar"
+  },
+  "FilterSource.hideFilterUi": {
+   "kind": "method",
+   "in": "@FilterSource",
+   "params": [],
+   "ret": "void",
+   "strings": [
+    "com.oplus.feature.effect.style.support"
+   ],
+   "calledBy": [
+    "@EffectMenu.showSeekBar"
+   ]
+  },
+  "FilterSource.showFilterUi": {
+   "kind": "method",
+   "in": "@FilterSource",
+   "params": [],
+   "ret": "void",
+   "strings": [
+    "com.oplus.feature.effect.style.support"
+   ],
+   "calledBy": [
+    "@EffectMenu.hideSeekBar"
+   ]
+  },
+  "Vibrate": {
+   "kind": "class",
+   "strings": [
+    "blockVibration, invalid block option: "
+   ]
+  },
+  "Vibrate.instance": {
+   "kind": "field",
+   "type": "@Vibrate",
+   "static": true
+  },
+  "Vibrate.play": {
+   "kind": "method",
+   "in": "@Vibrate",
+   "params": [
+    "int",
+    "int"
+   ],
+   "ret": "void"
+  },
+  "EffectMenu.refreshReset": {
+   "kind": "method",
+   "in": "@EffectMenu",
+   "overrideOf": "@EffectMenuBase.refreshReset"
+  },
+  "EffectMenu.modified": {
+   "kind": "method",
+   "in": "@EffectMenu",
+   "params": [],
+   "ret": "boolean",
+   "calledBy": [
+    "@EffectMenu.refreshReset"
+   ]
+  },
+  "EffectMenu.dispatch": {
+   "kind": "method",
+   "params": [
+    "int",
+    "com.oplus.camera.data.DataKey"
+   ],
+   "ret": "void",
+   "calledBy": [
+    "@EffectMenuBase.restore"
+   ]
+  },
+  "EffectItem.key": {
+   "kind": "field",
+   "type": "com.oplus.camera.data.DataKey",
+   "static": false,
+   "readBy": [
+    "@EffectMenuBase.restore"
+   ]
+  },
+  "EffectItem": {
+   "kind": "class",
+   "ownerOf": "@EffectItem.key"
+  },
+  "EffectItem.value": {
+   "kind": "field",
+   "in": "@EffectItem",
+   "type": "int",
+   "writtenBy": [
+    "@EffectMenuBase.restore"
+   ]
+  },
+  "EffectItem.label": {
+   "kind": "field",
+   "in": "@EffectItem",
+   "name": "a",
+   "type": "int"
+  },
+  "EffectItem.icon": {
+   "kind": "field",
+   "in": "@EffectItem",
+   "name": "b",
+   "type": "int"
+  },
+  "EffectMenu.bipolar": {
+   "kind": "method",
+   "in": "@EffectMenu",
+   "params": [
+    "int"
+   ],
+   "ret": "boolean"
+  },
+  "EffectContainer": {
+   "kind": "class",
+   "strings": [
+    "MasterEffectContainer"
+   ],
+   "super": "android.widget.LinearLayout"
+  },
+  "EffectContainer.sideMargin": {
+   "kind": "field",
+   "in": "@EffectContainer",
+   "name": "q",
+   "type": "int"
+  },
+  "EffectContainer.updateBounds": {
+   "kind": "method",
+   "in": "@EffectContainer",
+   "params": [],
+   "ret": "void",
+   "strings": [
+    "updateBlurBgBounds, calLeftAndRight is null, return"
+   ]
+  },
+  "EffectItemView": {
+   "kind": "class",
+   "strings": [
+    "MasterEffectContainer",
+    "expand"
+   ]
+  },
+  "EffectItemView.onClick": {
+   "kind": "method",
+   "in": "@EffectItemView",
+   "name": "onClick"
+  },
+  "EffectItemView.item": {
+   "kind": "field",
+   "in": "@EffectItemView",
+   "type": "@EffectItem"
+  },
+  "EffectItemView.bind": {
+   "kind": "method",
+   "in": "@EffectItemView",
+   "params": [
+    "boolean",
+    "boolean"
+   ],
+   "ret": "void"
+  },
+  "EffectItemView.name": {
+   "kind": "field",
+   "in": "@EffectItemView",
+   "type": "android.widget.TextView"
+  },
+  "EffectItemView.icon": {
+   "kind": "field",
+   "in": "@EffectItemView",
+   "type": "android.widget.ImageView"
+  },
+  "EffectValueView": {
+   "kind": "class",
+   "super": "@EffectItemView",
+   "fieldTypes": [
+    "android.widget.TextView"
+   ]
+  },
+  "EffectValueView.bind": {
+   "kind": "method",
+   "in": "@EffectValueView",
+   "overrideOf": "@EffectItemView.bind"
+  },
+  "EffectValueView.value": {
+   "kind": "field",
+   "in": "@EffectValueView",
+   "type": "android.widget.TextView"
+  },
+  "ScaleBar.setListener": {
+   "kind": "method",
+   "in": "com.oplus.camera.coui.seekbar.HSScaleBar",
+   "name": "setScaleBarValueChangeListener"
+  },
+  "ScaleBarListener": {
+   "kind": "class",
+   "paramOf": [
+    "@ScaleBar.setListener",
+    0
+   ]
+  },
+  "ScaleBarListener.onChanged": {
+   "kind": "method",
+   "in": "@ScaleBarListener",
+   "params": [
+    "int"
+   ],
+   "ret": "void"
+  },
+  "WbPanel": {
+   "kind": "class",
+   "strings": [
+    "HSWhiteBalanceLevelPanel"
+   ]
+  },
+  "WbPanel.collapsedTitleWidth": {
+   "kind": "method",
+   "in": "@WbPanel",
+   "params": [
+    "com.oplus.camera.inverse.InverseTextView"
+   ],
+   "ret": "float",
+   "fields": [
+    "Lcom/oplus/camera/feature/captureparam/R$dimen;->hs_professional_mode_scale_bar_title_width:I"
+   ]
+  },
+  "WbListener.expand": {
+   "kind": "method",
+   "params": [],
+   "ret": "void",
+   "strings": [
+    "funcKey_click"
+   ],
+   "invokes": [
+    "@WbPanel.collapsedTitleWidth"
+   ],
+   "multi": true
+  },
+  "WbListener.collapse": {
+   "kind": "method",
+   "params": [],
+   "ret": "void",
+   "strings": [
+    "funcValue_select",
+    "0"
+   ],
+   "invokes": [
+    "@WbPanel.collapsedTitleWidth"
+   ],
+   "multi": true
+  },
+  "ScaleBar.centerTextAnim": {
+   "kind": "method",
+   "in": "com.oplus.camera.coui.seekbar.HSScaleBar",
+   "params": [],
+   "ret": "void",
+   "invokes": [
+    "Lcom/oplus/camera/coui/seekbar/HSScaleBar;->getCenterTextMarginTopWhenDescShown()I",
+    "Landroid/animation/ValueAnimator;->start()V"
+   ]
+  },
+  "ScaleBar.select": {
+   "kind": "method",
+   "in": "com.oplus.camera.coui.seekbar.HSScaleBar",
+   "params": [
+    "int",
+    "boolean"
+   ],
+   "ret": "void"
+  },
+  "ScaleBar.scrollTo": {
+   "kind": "method",
+   "in": "com.oplus.camera.coui.seekbar.HSScaleBar",
+   "params": [
+    "int"
+   ],
+   "ret": "void",
+   "invokes": [
+    "Landroid/view/View;->postInvalidate()V"
+   ],
+   "notInvokes": [
+    "@ScaleBar.centerTextAnim"
+   ]
+  },
+  "FilterNames.presenter": {
+   "kind": "field",
+   "in": "@FilterNames",
+   "type": "@CaptureParams"
+  },
+  "CaptureParams.filterIndex": {
+   "kind": "method",
+   "in": "@CaptureParams",
+   "params": [],
+   "ret": "int",
+   "strings": [
+    "com.oplus.camera.feature.filter"
+   ]
+  },
+  "Prefs.storage": {
+   "kind": "method",
+   "params": [],
+   "ret": "java.lang.String",
+   "static": true,
+   "strings": [
+    "mmkv",
+    "sp"
+   ]
+  },
+  "Prefs.get": {
+   "kind": "method",
+   "params": [
+    "com.oplus.camera.data.DataKey",
+    "java.lang.String",
+    "java.lang.Class",
+    "java.lang.Object"
+   ],
+   "ret": "java.lang.Object",
+   "static": true
+  },
+  "Prefs.put": {
+   "kind": "method",
+   "params": [
+    "com.oplus.camera.data.DataKey",
+    "java.lang.String",
+    "java.lang.Class",
+    "java.lang.Object"
+   ],
+   "ret": "void",
+   "static": true,
+   "invokes": [
+    "Lcom/oplus/camera/data/DataManager;->g(Lcom/oplus/camera/data/DataKey;Ljava/lang/Object;)V"
+   ]
+  },
+  "Lut3d.update": {
+   "kind": "method",
+   "in": "com.oplus.camera.common.utils.Lut3dDataManager",
+   "params": [],
+   "ret": "void",
+   "strings": [
+    "updateBasicToneData, palette branch skip process, capModeName: "
+   ]
   }
  },
  "gallery": {
@@ -2705,6 +2839,12 @@
    "params": [],
    "ret": "java.io.InputStream"
   },
+  "FileStyleSource": {
+   "kind": "class",
+   "strings": [
+    "FileStyleSource(filePath='"
+   ]
+  },
   "StyleSource": {
    "kind": "class",
    "interfaceOf": "@AssetStyleSource"
@@ -2763,6 +2903,12 @@
     "@Section.onCreate"
    ]
   },
+  "Section.style": {
+   "kind": "field",
+   "in": "com.oplus.gallery.photoeditor.editingvvm.watermarkCamera.WatermarkCameraSection",
+   "name": "z0",
+   "type": "java.lang.String"
+  },
   "Section.grChip": {
    "kind": "field",
    "in": "com.oplus.gallery.photoeditor.editingvvm.watermarkCamera.WatermarkCameraSection",
@@ -2798,14 +2944,21 @@
   "Personalized.style": {
    "kind": "field",
    "in": "com.oplus.gallery.photoeditor.editingvvm.watermarkpersonalized.WatermarkPersonalizedEditSection",
-   "name": "g1",
-   "type": "java.lang.String"
+   "type": "java.lang.String",
+   "writtenBy": [
+    "@Personalized.setup"
+   ]
   },
   "Personalized.labels": {
    "kind": "field",
    "in": "com.oplus.gallery.photoeditor.editingvvm.watermarkpersonalized.WatermarkPersonalizedEditSection",
-   "name": "Y0",
-   "type": "java.util.List"
+   "type": "java.util.List",
+   "readBy": [
+    "@Personalized.setup"
+   ],
+   "notWrittenBy": [
+    "@Personalized.setup"
+   ]
   },
   "Extend.parse": {
    "kind": "method",
@@ -2838,6 +2991,12 @@
     "WatermarkInfo("
    ]
   },
+  "WatermarkContent": {
+   "kind": "class",
+   "strings": [
+    "WatermarkContent(make="
+   ]
+  },
   "RealmeWatermarkInfo": {
    "kind": "class",
    "strings": [
@@ -2853,12 +3012,6 @@
     "int"
    ],
    "ret": "boolean"
-  },
-  "WatermarkContent": {
-   "kind": "class",
-   "strings": [
-    "WatermarkContent(make="
-   ]
   },
   "MasterVM.onImagePack": {
    "kind": "method",
