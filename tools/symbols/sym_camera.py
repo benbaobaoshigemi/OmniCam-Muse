@@ -53,8 +53,8 @@ add(
  CaptureParams__restoreEffects=M(**{"in": "@CaptureParams"}, params=[], ret="void", strings=["recoverGrAllEffect"]),
  CaptureParams__onModeSwitch=M(**{"in": "@CaptureParams"}, params=["com.oplus.camera.protocal.event.message.modeProtocol.EventMessageModeSwitcherStage"], ret="void", strings=["CaptureParamPresenter"]),
  CaptureParams__releasePanel=M(**{"in": "@CaptureParams"}, params=[], ret="void", strings=["com.oplus.camera.feature.filter"]),
- # CaptureParams.Q3(): refreshes the effect entry button's state, and returns at once when GrSupport.supported()
- CaptureParams__refreshEffectEntry=M(**{"in": "@CaptureParams"}, name="Q3", params=[], ret="void"),
+ # CaptureParams.refreshEffectEntry: refreshes the effect entry button's state, and returns at once when GrSupport.supported()
+ CaptureParams__refreshEffectEntry=M(**{"in": "@CaptureParams"}, params=[], ret="void", invokes=["@GrSupport.supported", "Lcom/oplus/camera/common/thread/ThreadManager;->m(Ljava/lang/Runnable;)V"]),
  CaptureParams__menuClick=M(**{"in": "@CaptureParams"}, params=[S, S, "boolean"], ret="void", strings=["pref_lux_priority_key"]),
  FeaturePresenter=K(strings=["BaseFeaturePresenter", "setStateEvent, not cache in hashMap"]),
  FeatureKey=K(paramOf=["@FeaturePresenter.feature", 1]),
@@ -78,7 +78,7 @@ add(
  PalettePreview__request=F(**{"in": "@PalettePreview"}, name="l"),
  # "the viewfinder needs the basic tone / palette LUT texture" (z2 / n2): photo mode answers from the palette flag, 哈苏超清 overrides it with false
  Mode__needBasicToneLut=M(params=[], ret="boolean", strings=["needBasicToneLutTexture"]),
- Lut3dData__paletteMode=M(**{"in": "com.oplus.camera.common.utils.Lut3dDataManager"}, params=[S], ret="boolean", static=True, strings=["com.oplus.feature.color.palette.support"]),
+ Lut3dData__paletteMode=M(params=[S], ret="boolean", static=True, strings=["com.oplus.feature.color.palette.support"]),
  Mode__afMode=M(**{"in": "@BaseMode"}, params=[], ret="int", fields=["Landroid/hardware/camera2/CameraCharacteristics;->CONTROL_AF_AVAILABLE_MODES:Landroid/hardware/camera2/CameraCharacteristics$Key;"]),
  # capture stage request (GR effect bundle)
  StageRequest__putBundle=M(params=["com.oplus.ocs.camera.CameraParameter$PreviewKey", "android.os.Bundle"], ret="void", abstract=True),
@@ -156,10 +156,8 @@ add(
  EffectData__rebuild=M(**{"in": "@EffectData"}, params=["java.util.List", "java.util.LinkedList"], ret="void"),
  EffectData__delete=M(**{"in": "@EffectData"}, params=[S], ret="void"),
  EffectData__presets=F(**{"in": "@EffectData"}, type="java.util.LinkedList"),
- EffectData__repository=F(**{"in": "@EffectData"}, type="com.oplus.camera.feature.captureparam.preset.PresetDataRepository"),
  FilterSource__types=M(params=[], ret="java.util.List", strings=["com.oplus.camera.feature.filter"], invokes=["Ljava/util/Arrays;->stream([Ljava/lang/Object;)Ljava/util/stream/Stream;"]),
  FilterSource=K(ownerOf="@FilterSource.types"),
- Repository__custom=F(**{"in": "com.oplus.camera.feature.captureparam.preset.PresetDataRepository"}, type="java.util.LinkedList"),
  # data keys (holders are found by the preference names they define; keys by value)
  DataKeys__prefs=M(params=["java.lang.Class", S], ret=DK, static=True, strings=["com.oplus.camera_preferences"], numbers=[1]),
  DataKeys__cameraPrefs=M(params=["java.lang.Class", S], ret=DK, static=True, strings=["com.oplus.camera_preferences_"], numbers=[1]),
@@ -179,8 +177,8 @@ add(
  # shutter sound
  SoundPlayer=K(strings=["OplusPlaySound Thread", "releaseSoundPool."]),
  SoundPlayer__instance=M(**{"in": "@SoundPlayer"}, params=[], ret="@SoundPlayer", static=True),
- SoundPlayer__silence=M(**{"in": "@SoundPlayer"}, params=["long"], ret="void", strings=["com.oplus.blockVibration.delay"], notInvokes=["Landroid/os/ConditionVariable;->block(J)Z"]),
- SoundPlayer__unsilence=M(**{"in": "@SoundPlayer"}, params=["long"], ret="void", invokes=["Landroid/os/ConditionVariable;->block(J)Z"]),
+ SoundPlayer__silence=M(**{"in": "@SoundPlayer"}, params=["long"], ret="void", strings=["com.oplus.blockVibration.delay"], notInvokesDeep=["Landroid/os/ConditionVariable;->block(J)Z"]),
+ SoundPlayer__unsilence=M(**{"in": "@SoundPlayer"}, params=["long"], ret="void", invokesDeep=["Landroid/os/ConditionVariable;->block(J)Z"]),
  SoundPlayer__refresh=M(**{"in": "@SoundPlayer"}, params=["int"], ret="void", invokes=["Landroid/media/AudioManager;->getRingerMode()I", "Landroid/media/AudioManager;->getStreamVolume(I)I"]),
  SoundPlayer__pools=F(**{"in": "@SoundPlayer"}, type="android.media.SoundPool", multi=True),
  # mode number (intent extra "mode") -> mode name; KeyLaunchMode
@@ -201,8 +199,9 @@ add(
  WatermarkStyles__load=M(params=[S, S, "long", "boolean"], ret="org.json.JSONObject", static=True, strings=["/mode_limit_watermark/"]),
  WatermarkModel__styleNormal=M(params=[S], ret="boolean", static=True, strings=["isCurrentAiMasterWatermarkStyleNormal-aiMaster, sConfigForbidStyles: "]),
  Util__openEditor=M(**{"in": "com.oplus.camera.util.Util"}, params=["android.app.Activity", S, "boolean", "boolean", S], ret="boolean"),
- # stable fields of non-obfuscated classes (name + type checked)
+ # Lut3dDataManager fields
  Lut3d__load=M(**{"in": "com.oplus.camera.common.utils.Lut3dDataManager"}, params=["int", "int", S], ret="boolean", strings=["initializeBasicToneEnv, init result "]),
- Lut3d__mode=F(**{"in": "com.oplus.camera.common.utils.Lut3dDataManager"}, name="P", type=S),
- Lut3d__index=F(**{"in": "com.oplus.camera.common.utils.Lut3dDataManager"}, name="M", type="int"),
+ Lut3d__release=M(**{"in": "com.oplus.camera.common.utils.Lut3dDataManager"}, ret="void", invokes=["Lcom/oplus/ocs/camera/CombineLutHelper;->release()V"]),
+ Lut3d__mode=F(**{"in": "com.oplus.camera.common.utils.Lut3dDataManager"}, type=S, writtenBy=["@Lut3d.load"], readBy=["@Lut3d.update"]),
+ Lut3d__index=F(**{"in": "com.oplus.camera.common.utils.Lut3dDataManager"}, type="int", readBy=["@Lut3d.load"], writtenBy=["@Lut3d.release"], multi=True),
 )

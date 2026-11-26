@@ -58,6 +58,7 @@ thread_local bool activeMaster = false;
 thread_local std::string activeMasterDir;
 
 bool isGrFrame(void *frame) {
+    if (!getSettingInt) return false;
     void *settings = *reinterpret_cast<void **>(static_cast<char *>(frame) + 0x8110);
     return getSettingInt(settings, &kGrSizeKey, 0) == 63;
 }
@@ -167,6 +168,21 @@ uintptr_t loadLut(void *object, int mode) {
     return originalLoadLut(object, mode);
 }
 
+static void *resolveGetSettingInt(void *lmtAddress, void *imageBase) {
+    // getLmtParamsV1 reads frame_id at [x19, #0x24] (0xb9002660) right after `bl getSettingInt; ldrb w8, [sp, #0xc8]`.
+    const auto *code = static_cast<const uint32_t *>(lmtAddress);
+    for (size_t i = 2; i < 0x800; ++i) {
+        if (code[i] == 0xb9002660u && (code[i - 2] >> 26) == 0x25u) {
+            int32_t imm26 = static_cast<int32_t>(code[i - 2] & 0x03ffffffu);
+            if (imm26 & 0x02000000) imm26 -= 0x04000000;
+            return const_cast<uint32_t *>(&code[i - 2] + imm26);
+        }
+    }
+    uintptr_t lmtOffset = reinterpret_cast<uintptr_t>(lmtAddress) - reinterpret_cast<uintptr_t>(imageBase);
+    if (lmtOffset == 0x1fd31f4u) return static_cast<char *>(imageBase) + 0x15389cc;
+    return nullptr;
+}
+
 void hookAlgoInterface(HookFunction hook, void *handle) {
     if (!gAlgoInterfaceHandle) gAlgoInterfaceHandle = handle;
     if (originalGetLmtParams) return;
@@ -174,9 +190,14 @@ void hookAlgoInterface(HookFunction hook, void *handle) {
     Dl_info info{};
     void *lmtAddress = dlsym(handle, lmtSymbol);
     if (!lmtAddress || !dladdr(lmtAddress, &info)) return;
-    // Same setting accessor that getLmtParamsV1 calls at 0x2035b78.
-    getSettingInt = reinterpret_cast<decltype(getSettingInt)>(
-        static_cast<char *>(info.dli_fbase) + 0x150cdd0);
+    void *resolvedSettingInt = resolveGetSettingInt(lmtAddress, info.dli_fbase);
+    if (!resolvedSettingInt) {
+        __android_log_print(ANDROID_LOG_ERROR, kTag,
+                            "getSettingInt not resolved (lmt=%p); skipping AlgoInterface hooks",
+                            lmtAddress);
+        return;
+    }
+    getSettingInt = reinterpret_cast<decltype(getSettingInt)>(resolvedSettingInt);
     hookExport(hook, handle, lmtSymbol, reinterpret_cast<void *>(getLmtParams),
                reinterpret_cast<void **>(&originalGetLmtParams), kTag);
     filterProcessV1 = reinterpret_cast<decltype(filterProcessV1)>(

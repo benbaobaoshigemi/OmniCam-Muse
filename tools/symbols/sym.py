@@ -21,7 +21,7 @@ def M(**kw): d = {"kind": "method"}; d.update(kw); return d
 def F(**kw): d = {"kind": "field"}; d.update(kw); return d
 def K(**kw): d = {"kind": "class"}; d.update(kw); return d
 S = "java.lang.String"
-for source in ("sym_camera.py", "sym_camera3.py"):
+for source in ("sym_camera.py", "sym_camera2.py", "sym_camera3.py"):
     exec(open(os.path.join(HERE, source), encoding="utf-8").read())
 G = {}
 exec(open(os.path.join(HERE, "sym_gallery.py"), encoding="utf-8").read())

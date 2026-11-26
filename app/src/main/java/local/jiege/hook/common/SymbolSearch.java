@@ -215,6 +215,10 @@ public final class SymbolSearch {
         for (String caller : strings(s, "calledBy")) matcher.addCaller(methodDescriptor(caller));
         List<String> notInvokes = new ArrayList<>();
         for (String invoke : strings(s, "notInvokes")) notInvokes.add(methodDescriptor(invoke));
+        List<String> invokesDeep = new ArrayList<>();
+        for (String invoke : strings(s, "invokesDeep")) invokesDeep.add(methodDescriptor(invoke));
+        List<String> notInvokesDeep = new ArrayList<>();
+        for (String invoke : strings(s, "notInvokesDeep")) notInvokesDeep.add(methodDescriptor(invoke));
 
         List<String> hits = new ArrayList<>();
         for (MethodData method : bridge.findMethod(FindMethod.create().matcher(matcher))) {
@@ -228,9 +232,26 @@ public final class SymbolSearch {
                 for (MethodData invoked : method.getInvokes()) if (notInvokes.contains(invoked.getDescriptor())) excluded = true;
                 if (excluded) continue;
             }
+            if (!invokesDeep.isEmpty() || !notInvokesDeep.isEmpty()) {
+                if (!matchesDeepInvokes(method, invokesDeep, notInvokesDeep)) continue;
+            }
             hits.add(methodEntry(method));
         }
         return hits;
+    }
+
+    private static boolean matchesDeepInvokes(MethodData method, List<String> required, List<String> excluded) {
+        String owner = method.getClassName();
+        List<String> reached = new ArrayList<>();
+        for (MethodData invoked : method.getInvokes()) {
+            reached.add(invoked.getDescriptor());
+            if (invoked.isMethod() && owner.equals(invoked.getClassName())) {
+                for (MethodData inner : invoked.getInvokes()) reached.add(inner.getDescriptor());
+            }
+        }
+        for (String target : required) if (!reached.contains(target)) return false;
+        for (String target : excluded) if (reached.contains(target)) return false;
+        return true;
     }
 
     private List<String> findField(JSONObject s) throws Exception {
