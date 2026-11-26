@@ -177,9 +177,8 @@ add(
  # shutter sound
  SoundPlayer=K(strings=["OplusPlaySound Thread", "releaseSoundPool."]),
  SoundPlayer__instance=M(**{"in": "@SoundPlayer"}, params=[], ret="@SoundPlayer", static=True),
- SoundPlayer__checkRinger=M(**{"in": "@SoundPlayer"}, params=[], ret="void", invokes=["Landroid/os/ConditionVariable;->block(J)Z"]),
- SoundPlayer__silence=M(**{"in": "@SoundPlayer"}, params=["long"], ret="void", strings=["com.oplus.blockVibration.delay"], numbers=[7], notInvokes=["Landroid/os/ConditionVariable;->block(J)Z", "@SoundPlayer.checkRinger"]),
- SoundPlayer__unsilence=M(**{"in": "@SoundPlayer"}, params=["long"], ret="void", invokes=["@SoundPlayer.checkRinger"]),
+ SoundPlayer__silence=M(**{"in": "@SoundPlayer"}, params=["long"], ret="void", strings=["com.oplus.blockVibration.delay"], notInvokesDeep=["Landroid/os/ConditionVariable;->block(J)Z"]),
+ SoundPlayer__unsilence=M(**{"in": "@SoundPlayer"}, params=["long"], ret="void", invokesDeep=["Landroid/os/ConditionVariable;->block(J)Z"]),
  SoundPlayer__refresh=M(**{"in": "@SoundPlayer"}, params=["int"], ret="void", invokes=["Landroid/media/AudioManager;->getRingerMode()I", "Landroid/media/AudioManager;->getStreamVolume(I)I"]),
  SoundPlayer__pools=F(**{"in": "@SoundPlayer"}, type="android.media.SoundPool", multi=True),
  # mode number (intent extra "mode") -> mode name; KeyLaunchMode
@@ -202,6 +201,7 @@ add(
  Util__openEditor=M(**{"in": "com.oplus.camera.util.Util"}, params=["android.app.Activity", S, "boolean", "boolean", S], ret="boolean"),
  # Lut3dDataManager fields
  Lut3d__load=M(**{"in": "com.oplus.camera.common.utils.Lut3dDataManager"}, params=["int", "int", S], ret="boolean", strings=["initializeBasicToneEnv, init result "]),
+ Lut3d__release=M(**{"in": "com.oplus.camera.common.utils.Lut3dDataManager"}, ret="void", invokes=["Lcom/oplus/ocs/camera/CombineLutHelper;->release()V"]),
  Lut3d__mode=F(**{"in": "com.oplus.camera.common.utils.Lut3dDataManager"}, type=S, writtenBy=["@Lut3d.load"], readBy=["@Lut3d.update"]),
- Lut3d__index=F(**{"in": "com.oplus.camera.common.utils.Lut3dDataManager"}, name="N", type="int"),
+ Lut3d__index=F(**{"in": "com.oplus.camera.common.utils.Lut3dDataManager"}, type="int", readBy=["@Lut3d.load"], writtenBy=["@Lut3d.release"], multi=True),
 )

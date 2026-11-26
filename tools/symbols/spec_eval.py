@@ -202,6 +202,17 @@ class Replay:
                     called = {f"{o}->{n}{p}" for o, n, p in m["calls"]}
                     if any(self.mdesc(i) in called for i in s["notInvokes"]):
                         continue
+                if s.get("invokesDeep") or s.get("notInvokesDeep"):
+                    called = {f"{o}->{n}{p}" for o, n, p in m["calls"]}
+                    for o, n, p in m["calls"]:
+                        if o == od and n not in ("<init>", "<clinit>"):
+                            for hm in c["methods"]:
+                                if hm["name"] == n and hm["type"] == p:
+                                    called.update(f"{o2}->{n2}{p2}" for o2, n2, p2 in hm["calls"])
+                    if any(self.mdesc(i) not in called for i in s.get("invokesDeep", [])):
+                        continue
+                    if any(self.mdesc(i) in called for i in s.get("notInvokesDeep", [])):
+                        continue
                 if flds:
                     used = {f"{o}->{n}:{t}" for _, o, n, t in m["fields"]}
                     if any(f not in used for f in flds):
