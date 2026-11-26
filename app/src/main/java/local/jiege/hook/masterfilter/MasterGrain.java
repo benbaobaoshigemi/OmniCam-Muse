@@ -534,20 +534,26 @@ final class MasterGrain {
         private void listen(final View bar, final String prefix, final TextView title, final View other,
                             final TextView otherTitle, final int side) throws Throwable {
             final int[] last = {-1};
+            final String onChanged = symbols.name("ScaleBarListener.onChanged");
+            final String onExpand = symbols.name("WbListener.expand");
+            final String onCollapse = symbols.name("WbListener.collapse");
             Class<?> listener = symbols.cls("ScaleBarListener");
             Object proxy = Proxy.newProxyInstance(listener.getClassLoader(), new Class<?>[] {listener}, new InvocationHandler() {
                 @Override public Object invoke(Object self, Method method, Object[] args) {
-                    switch (method.getName()) {
-                        case "g":
-                            tick(last, (Integer) args[0]);
-                            changed(symbols, owner, prefix, (Integer) args[0]);
-                            break;
-                        case "h": expand(title, other, otherTitle); break;
-                        case "j": collapse(title, other, otherTitle, side); break;
-                        case "equals": return self == args[0];
-                        case "hashCode": return System.identityHashCode(self);
-                        case "toString": return TAG + " bar";
-                        default: break;
+                    String name = method.getName();
+                    if (onChanged.equals(name)) {
+                        tick(last, (Integer) args[0]);
+                        changed(symbols, owner, prefix, (Integer) args[0]);
+                    } else if (onExpand.equals(name)) {
+                        expand(title, other, otherTitle);
+                    } else if (onCollapse.equals(name)) {
+                        collapse(title, other, otherTitle, side);
+                    } else if ("equals".equals(name)) {
+                        return self == args[0];
+                    } else if ("hashCode".equals(name)) {
+                        return System.identityHashCode(self);
+                    } else if ("toString".equals(name)) {
+                        return TAG + " bar";
                     }
                     return null;
                 }
