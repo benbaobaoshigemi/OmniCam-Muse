@@ -12,7 +12,8 @@ add(
 MSB = "com.oplus.camera.control.MainShutterButton"
 add(
  Zoom__labelBitmap=F(**{"in": ZSB}, name="I6", type="android.graphics.Bitmap"),
- Zoom__fadeLabels=M(**{"in": ZSB}, name="b", params=[], ret="void"),
+ ZoomBase__fadeAnim=M(**{"in": "@ZoomBase"}, params=["boolean"], ret="void", invokes=["Landroid/os/Handler;->sendEmptyMessageDelayed(IJ)Z", "Landroid/animation/AnimatorSet;->start()V"]),
+ Zoom__fadeLabels=M(**{"in": ZSB}, params=[], ret="void", invokes=["@ZoomBase.fadeAnim"]),
  ZoomBase__fadeLabels=M(**{"in": "@ZoomBase"}, overrideOf="@Zoom.fadeLabels"),
  ZoomUi__bar=F(**{"in": "@ZoomUi"}, readBy=["@ZoomUi.setUnit"]),
  Card__texts=F(**{"in": "@Card"}, type="com.oplus.camera.common.view.StrokeTextView", multi=True),
@@ -84,9 +85,15 @@ add(
  EffectValueView__value=F(**{"in": "@EffectValueView"}, type="android.widget.TextView"),
  ScaleBar__setListener=M(**{"in": SB}, name="setScaleBarValueChangeListener"),
  ScaleBarListener=K(paramOf=["@ScaleBar.setListener", 0]),
+ ScaleBarListener__onChanged=M(**{"in": "@ScaleBarListener"}, params=["int"], ret="void"),
+ WbPanel=K(strings=["HSWhiteBalanceLevelPanel"]),
+ WbPanel__collapsedTitleWidth=M(**{"in": "@WbPanel"}, params=["com.oplus.camera.inverse.InverseTextView"], ret="float", fields=["Lcom/oplus/camera/feature/captureparam/R$dimen;->hs_professional_mode_scale_bar_title_width:I"]),
+ WbListener__expand=M(params=[], ret="void", strings=["funcKey_click"], invokes=["@WbPanel.collapsedTitleWidth"], multi=True),
+ WbListener__collapse=M(params=[], ret="void", strings=["funcValue_select", "0"], invokes=["@WbPanel.collapsedTitleWidth"], multi=True),
+ ScaleBar__centerTextAnim=M(**{"in": SB}, params=[], ret="void", invokes=[f"L{SB.replace('.', '/')};->getCenterTextMarginTopWhenDescShown()I", "Landroid/animation/ValueAnimator;->start()V"]),
  # position the bar on an index: select (index + notify flag), then scroll the scale to it
- ScaleBar__select=M(**{"in": SB}, name="L", params=["int", "boolean"], ret="void"),
- ScaleBar__scrollTo=M(**{"in": SB}, name="G", params=["int"], ret="void"),
+ ScaleBar__select=M(**{"in": SB}, params=["int", "boolean"], ret="void"),
+ ScaleBar__scrollTo=M(**{"in": SB}, params=["int"], ret="void", invokes=["Landroid/view/View;->postInvalidate()V"], notInvokes=["@ScaleBar.centerTextAnim"]),
  FilterNames__presenter=F(**{"in": "@FilterNames"}, type="@CaptureParams"),
  # current filter: the presenter's filter index into the mode's filter types (FilterNames.types)
  CaptureParams__filterIndex=M(**{"in": "@CaptureParams"}, params=[], ret="int", strings=["com.oplus.camera.feature.filter"]),
