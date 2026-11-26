@@ -1350,15 +1350,6 @@
    "ret": "@SoundPlayer",
    "static": true
   },
-  "SoundPlayer.checkRinger": {
-   "kind": "method",
-   "in": "@SoundPlayer",
-   "params": [],
-   "ret": "void",
-   "invokes": [
-    "Landroid/os/ConditionVariable;->block(J)Z"
-   ]
-  },
   "SoundPlayer.silence": {
    "kind": "method",
    "in": "@SoundPlayer",
@@ -1369,12 +1360,8 @@
    "strings": [
     "com.oplus.blockVibration.delay"
    ],
-   "numbers": [
-    7
-   ],
-   "notInvokes": [
-    "Landroid/os/ConditionVariable;->block(J)Z",
-    "@SoundPlayer.checkRinger"
+   "notInvokesDeep": [
+    "Landroid/os/ConditionVariable;->block(J)Z"
    ]
   },
   "SoundPlayer.unsilence": {
@@ -1384,8 +1371,8 @@
     "long"
    ],
    "ret": "void",
-   "invokes": [
-    "@SoundPlayer.checkRinger"
+   "invokesDeep": [
+    "Landroid/os/ConditionVariable;->block(J)Z"
    ]
   },
   "SoundPlayer.refresh": {
@@ -1545,6 +1532,14 @@
     "initializeBasicToneEnv, init result "
    ]
   },
+  "Lut3d.release": {
+   "kind": "method",
+   "in": "com.oplus.camera.common.utils.Lut3dDataManager",
+   "ret": "void",
+   "invokes": [
+    "Lcom/oplus/ocs/camera/CombineLutHelper;->release()V"
+   ]
+  },
   "Lut3d.mode": {
    "kind": "field",
    "in": "com.oplus.camera.common.utils.Lut3dDataManager",
@@ -1559,8 +1554,14 @@
   "Lut3d.index": {
    "kind": "field",
    "in": "com.oplus.camera.common.utils.Lut3dDataManager",
-   "name": "N",
-   "type": "int"
+   "type": "int",
+   "readBy": [
+    "@Lut3d.load"
+   ],
+   "writtenBy": [
+    "@Lut3d.release"
+   ],
+   "multi": true
   },
   "ModeItem": {
    "kind": "class",
